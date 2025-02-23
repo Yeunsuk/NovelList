@@ -1,0 +1,36 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'com.github.johnrengelman.shadow' version '8.0.0'
+    id "edu.sc.seis.launch4j"  version "3.0.6"
+}
+
+repositories {
+    mavenCentral()
+    gradlePluginPortal()
+}
+
+dependencies {
+    implementation 'org.jsoup:jsoup:1.15.3'
+    implementation 'org.seleniumhq.selenium:selenium-java:4.29.0'
+    implementation 'org.seleniumhq.selenium:selenium-chrome-driver:4.29.0'
+    implementation 'io.github.bonigarcia:webdrivermanager:5.9.3'
+    implementation 'org.slf4j:slf4j-api:2.1.0-alpha1'
+    implementation 'ch.qos.logback:logback-classic:1.5.16'
+}
+
+
+shadowJar {
+    archiveBaseName.set('NovelList')  // 생성될 JAR 파일 이름 설정
+    mainClassName = 'Main'   // 메인 클래스 지정
+}
+
+
+launch4j {
+    mainClassName = 'Main'
+    outfile = 'build/libs/NovelList.exe'  // EXE 파일 출력 경로
+    jreMinVersion = '21'  // 필요한 최소 JRE 버전 설정
+    dontWrapJar = false  // JAR 파일을 EXE로 래핑할 것인지 여부
+    bundledJrePath = 'build/jre'  // JRE 경로 설정
+}
+//jlink --module-path $JAVA_HOME/jmods --add-modules java.base,java.sql --output build/jre
