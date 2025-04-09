@@ -1,0 +1,2 @@
+JAVA_VERSION="21.0.6"
+MODULES="java.base java.logging java.transaction.xa java.xml java.sql"
