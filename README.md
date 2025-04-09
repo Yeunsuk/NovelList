@@ -10,8 +10,8 @@
 - 결과: 저장값을 점수순으로 정렬해 파일로 저장
 
 ## 실행파일
-- .jar
-- .exe
+- .jar 경로: build/libs
+- .exe 경로: build/launch4j/build/libs
 
 ## 개선가능한 점
 - 검색 중 진행 수치 표시
