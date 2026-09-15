@@ -26,6 +26,20 @@ test {
     useJUnitPlatform()
 }
 
+// 소스 파일(한글 문자열 포함)이 플랫폼 기본 인코딩으로 잘못 읽혀서
+// 컴파일된 문자열 상수 자체가 깨지는 걸 방지
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// 실행/테스트 시 콘솔·파일 출력도 UTF-8로 고정
+tasks.withType(JavaExec).configureEach {
+    jvmArgs += ['-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8']
+}
+tasks.withType(Test).configureEach {
+    jvmArgs += ['-Dfile.encoding=UTF-8']
+}
+
 
 shadowJar {
     archiveBaseName.set('NovelList')  // 생성될 JAR 파일 이름 설정

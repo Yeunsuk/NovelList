@@ -1,6 +1,10 @@
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.PrintStream;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -15,7 +19,8 @@ public class Main {
 
     public static void saveBookList(List<Book> bookList, String fileName) {
         new File(RESULT_DIR).mkdirs();
-        try (FileWriter writer = new FileWriter(fileName)) {
+        // FileWriter는 플랫폼 기본 인코딩을 씀 - 한글 깨짐 방지를 위해 UTF-8 명시
+        try (Writer writer = new OutputStreamWriter(new FileOutputStream(fileName), StandardCharsets.UTF_8)) {
             for (Book book : bookList) {
                 writer.write(book.toString() + "\n");
             }
@@ -48,6 +53,9 @@ public class Main {
     }
 
     public static void main(String[] args) {
+        // 콘솔 인코딩이 UTF-8이 아닌 환경(한국어 Windows 등)에서 로그 한글 깨짐 방지
+        System.setOut(new PrintStream(System.out, true, StandardCharsets.UTF_8));
+        System.setErr(new PrintStream(System.err, true, StandardCharsets.UTF_8));
 
         // WebDriverManager를 사용하여 ChromeDriver 자동 다운로드 및 설정
         if (System.getProperty("webdriver.chrome.driver") == null) {

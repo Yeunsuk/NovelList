@@ -2,6 +2,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,10 +15,13 @@ public class SelectorConfig {
     private static final Properties props = new Properties();
 
     static {
+        // Properties.load(InputStream)는 기본적으로 ISO-8859-1로 읽어서 UTF-8 파일의
+        // 한글이 깨짐. 반드시 Reader + UTF-8로 읽어야 함.
+
         // 1. 기본값: jar 안에 번들된 설정
         try (InputStream in = SelectorConfig.class.getResourceAsStream("/selectors.properties")) {
             if (in != null) {
-                props.load(in);
+                props.load(new InputStreamReader(in, StandardCharsets.UTF_8));
             }
         } catch (IOException e) {
             log.error("기본 셀렉터 설정 로드 실패", e);
@@ -26,7 +31,7 @@ public class SelectorConfig {
         File external = new File("selectors.properties");
         if (external.exists()) {
             try (InputStream in = new FileInputStream(external)) {
-                props.load(in);
+                props.load(new InputStreamReader(in, StandardCharsets.UTF_8));
                 log.info("외부 셀렉터 설정 적용됨: {}", external.getAbsolutePath());
             } catch (IOException e) {
                 log.error("외부 셀렉터 설정 로드 실패", e);

@@ -163,31 +163,31 @@ public class UI {
         JPanel bookPanel = new JPanel();
         bookPanel.setLayout(new BoxLayout(bookPanel, BoxLayout.Y_AXIS));
         bookPanel.setBorder(BorderFactory.createLineBorder(Color.BLACK));
-        
-        // 각 정보를 라벨 추가
+        bookPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        // 각 정보를 라벨 추가 (줄바꿈 안 되는 설명을 JLabel로도 뿌리면 라벨 하나가
+        // 엄청 넓어져서 BoxLayout이 다른 라벨들을 가운데 정렬시켜 화면 밖으로 밀어냄 -> 제거)
         JLabel titleLabel = new JLabel("Title: " + (book.getTitle().isEmpty() ? "없음" : book.getTitle()));
         JLabel scoreLabel = new JLabel("Score: " + book.getScore());
         JLabel tagsLabel = new JLabel("Tags: " + (book.getTags().isEmpty() ? "없음" : book.getTags()));
         JLabel authorLabel = new JLabel("Author: " + (book.getAuthor().isEmpty() ? "미정" : book.getAuthor()));
         JLabel linkLabel = new JLabel("Link: " + (book.getLink().isEmpty() ? "없음" : book.getLink()));
-        JLabel descriptionLabel = new JLabel("Description: " + (book.getDescription().isEmpty() ? "미정" : book.getDescription()));
         JLabel platformLabel = new JLabel("Platform: " + (book.getPlatform().isEmpty() ? "없음" : book.getPlatform()));
-        
-        bookPanel.add(titleLabel);
-        bookPanel.add(scoreLabel);
-        bookPanel.add(tagsLabel);
-        bookPanel.add(authorLabel);
-        bookPanel.add(linkLabel);
-        bookPanel.add(descriptionLabel);
-        bookPanel.add(platformLabel);
 
-        // 각 레이블 자동 줄 바꿈 처리
-        JTextArea descriptionTextArea = new JTextArea(book.getDescription());
+        for (JLabel label : new JLabel[]{titleLabel, scoreLabel, tagsLabel, authorLabel, linkLabel, platformLabel}) {
+            label.setAlignmentX(Component.LEFT_ALIGNMENT);
+            bookPanel.add(label);
+        }
+
+        // 설명은 줄바꿈되는 텍스트영역으로만 표시
+        JTextArea descriptionTextArea = new JTextArea("Description: " + (book.getDescription().isEmpty() ? "미정" : book.getDescription()));
         descriptionTextArea.setLineWrap(true);
         descriptionTextArea.setWrapStyleWord(true);
         descriptionTextArea.setEditable(false);
+        descriptionTextArea.setAlignmentX(Component.LEFT_ALIGNMENT);
+        descriptionTextArea.setSize(360, Short.MAX_VALUE); // 넓이 고정해야 줄바꿈 계산이 제대로 됨
         bookPanel.add(descriptionTextArea);
-        
+
         return bookPanel;
     }
 }
