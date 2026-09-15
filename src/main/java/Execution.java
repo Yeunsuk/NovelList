@@ -6,10 +6,17 @@ import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -42,6 +49,7 @@ class BookCrawler implements Runnable {
     public String piadescription = "div.epnew-novel-info > div.mobile_hidden > div.info-graybox > div.synopsis";
     
     public String piaplatform = "https://novelpia.com/";
+    public static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
     private String bookUrl;
     private String platform;
     private List<Book> books;
@@ -56,6 +64,74 @@ class BookCrawler implements Runnable {
 
     @Override
     public void run() {
+        if (platform.equals("kakao")) {
+            runKakao();
+        } else {
+            runJsoup();
+        }
+    }
+
+    // 네이버, 피아: 정적 HTML이라 브라우저 없이 jsoup으로 처리 (가벼움)
+    private void runJsoup() {
+        String booklink = "";
+        try {
+            String title;
+            int score;
+            List<String> booktags = new ArrayList<>();
+            String author;
+            String description;
+
+            if (platform.equals("naver")) {
+                booklink = naverplatform + bookUrl;
+                Document doc = Jsoup.connect(booklink).userAgent(USER_AGENT).timeout(10000).get();
+                Element titleEl = doc.selectFirst(navertitle);
+                Element scoreEl = doc.selectFirst(naverscore);
+                Elements tagEls = doc.select(navertags);
+                Element authorEl = doc.selectFirst(naverauthor);
+                Element descEl = doc.selectFirst(naverdescription);
+
+                title = titleEl.text();
+                score = (int) Math.round(Double.parseDouble(scoreEl.text()) * 10);
+                for (Element tagEl : tagEls) {
+                    booktags.add(tagEl.text().replace("#", ""));
+                }
+                author = authorEl.text();
+                description = descEl.text();
+            } else { // pia
+                booklink = piaplatform + bookUrl;
+                Document doc = Jsoup.connect(booklink).userAgent(USER_AGENT).timeout(10000).get();
+                Element titleEl = doc.selectFirst(piatitle);
+                Element scoreEl = doc.selectFirst(piascore);
+                Elements tagEls = doc.select(piatags);
+                Element authorEl = doc.selectFirst(piaauthor);
+                Element descEl = doc.selectFirst(piadescription);
+
+                title = titleEl.text();
+                String tmp = scoreEl.text().replace(",", "");
+                score = Integer.parseInt(tmp);
+                for (Element tagEl : tagEls) {
+                    booktags.add(tagEl.text().replace("#", ""));
+                }
+                author = authorEl.text();
+                description = descEl.text();
+            }
+
+            if (isFilteredOut(booktags)) {
+                return;
+            }
+
+            synchronized (books) {
+                Book book = new Book(title, score, booktags, author, booklink, description.replaceAll("\\s+", " ").trim(), platform);
+                books.add(book);
+            }
+        } catch (Exception e) {
+            System.out.println("오류 발생: " + booklink);
+            System.out.println("오류 원인: " + e.getMessage());
+        }
+    }
+
+    // 카카오: Vue/React SPA라 브라우저(JS 실행) 필요
+    private void runKakao() {
         // 브라우저 안띄우기
         ChromeOptions options = new ChromeOptions();
         options.addArguments("--headless");
@@ -64,90 +140,39 @@ class BookCrawler implements Runnable {
         WebDriver driver = new ChromeDriver(options);
         WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(25));
         String booklink = "";
-        
 
         try {
-            // 플랫폼에 맞는 CSS 선택자 설정
-            WebElement booktitle = null;
-            WebElement bookscore = null;
-            List<WebElement> taglinks = null;
-            WebElement bookauthor = null;
-            WebElement bookdescription = null;
-            List<String> booktags = new ArrayList<>();
-            int score = 0;
+            booklink = kakaoplatform + bookUrl + "?tab_type=about";
+            driver.get(booklink);
 
-            // 플랫폼에 따라 다른 CSS 선택자 사용
-            switch (platform) {
-                case "naver":
-                    booklink = naverplatform + bookUrl;
-                    driver.get(booklink);
-                    booktitle = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(navertitle)));
-                    bookscore = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(naverscore)));
-                    score = (int) Math.round(Double.parseDouble(bookscore.getText()) * 10);
-                    taglinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(navertags)));
-                    bookauthor = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(naverauthor)));
-                    bookdescription = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(naverdescription)));
-                    break;
-                case "kakao":
-                    booklink = kakaoplatform + bookUrl + "?tab_type=about";
-                    driver.get(booklink);
-
-                    WebElement bookdescription1 = null;
-                    WebElement bookdescription2 = null;
-                    booktitle = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaotitle)));
-                    bookscore = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaoscore)));
-                    score = (int) Math.round(Double.parseDouble(bookscore.getText()) * 10);
-                    taglinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(kakaotags)));
-                    bookauthor = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaoauthor)));
-                    try {
-                        bookdescription1 = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaodescription1)));
-                    } catch (Exception e) {
-                        if (bookdescription1 == null) {
-                            bookdescription2 = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaodescription2)));
-                        }
-                    }
-                    
-                    // 설명 중 로드된 요소
-                    bookdescription = (bookdescription1 != null) ? bookdescription1 : bookdescription2;
-                    break;
-                case "pia":
-                    booklink = piaplatform + bookUrl;
-                    driver.get(booklink);
-                    booktitle = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(piatitle)));
-                    bookscore = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(piascore)));
-                    String tmp = bookscore.getText().replace(",", "");
-                    score = Integer.parseInt(tmp);
-                    taglinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(piatags)));
-                    bookauthor = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(piaauthor)));
-                    bookdescription = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(piadescription)));
-                    break;
+            WebElement bookdescription1 = null;
+            WebElement bookdescription2 = null;
+            WebElement booktitle = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaotitle)));
+            WebElement bookscore = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaoscore)));
+            int score = (int) Math.round(Double.parseDouble(bookscore.getText()) * 10);
+            List<WebElement> taglinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(kakaotags)));
+            WebElement bookauthor = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaoauthor)));
+            try {
+                bookdescription1 = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaodescription1)));
+            } catch (Exception e) {
+                if (bookdescription1 == null) {
+                    bookdescription2 = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaodescription2)));
+                }
             }
 
+            // 설명 중 로드된 요소
+            WebElement bookdescription = (bookdescription1 != null) ? bookdescription1 : bookdescription2;
+
+            List<String> booktags = new ArrayList<>();
             for (WebElement link : taglinks) {
                 String tagText = link.getText();
                 booktags.add(tagText.replace("#", ""));
             }
 
-            /* 
-            System.out.println("제목: " + booktitle.getText());
-            System.out.println("점수: " + score);
-            System.out.println("태그: " + booktags);
-            System.out.println("저자: " + bookauthor.getText());
-            System.out.println("정보: " + bookdescription.getText());*/
-
-            // 태그 연산 필터
-            if (input.getDescription() == "합집합") {
-                if (input.getTags() != null && input.getTags().stream().anyMatch(tag -> !booktags.contains(tag))) {
-                    return;
-                }
-            } else if (input.getDescription() == "교집합") {
-                if (input.getTags() != null && booktags.stream().noneMatch(input.getTags()::contains)) {
-                    return;
-                }
+            if (isFilteredOut(booktags)) {
+                return;
             }
 
-            // 책 정보 추가
-            //System.out.println(booktags); 
             synchronized (books) {
                 Book book = new Book(booktitle.getText(), score, booktags, bookauthor.getText(), booklink, bookdescription.getText().replaceAll("\\s+", " ").trim(), platform);
                 books.add(book);
@@ -159,6 +184,16 @@ class BookCrawler implements Runnable {
         } finally {
             driver.quit();
         }
+    }
+
+    // 태그 연산 필터 (합집합/교집합)
+    private boolean isFilteredOut(List<String> booktags) {
+        if (input.getDescription().equals("합집합")) {
+            return input.getTags() != null && input.getTags().stream().anyMatch(tag -> !booktags.contains(tag));
+        } else if (input.getDescription().equals("교집합")) {
+            return input.getTags() != null && booktags.stream().noneMatch(input.getTags()::contains);
+        }
+        return false;
     }
 }
 
@@ -187,6 +222,10 @@ public class Execution {
     private String Piapage = "a.page-link";
 
     public List<Book> Start(String platform, Book input) {
+        if (platform.equals("naver")) {
+            return StartNaver(input);
+        }
+
         List<Book> books = Collections.synchronizedList(new ArrayList<>());
         String site = "";
         String search1 = "";
@@ -197,15 +236,6 @@ public class Execution {
         String sitepage = "";
 
         switch (platform) {
-            case "naver":
-                site = Series;
-                search1 = SeriesSearch1;
-                search2 = SeriesSearch2;
-                tagsearch = SeriestagSearch;
-                booklist = Serieslist;
-                bookname = Serieslist;
-                sitepage = Seriespage;
-                break;
             case "kakao":
                 site = Kakao;
                 search1 = KakaoSearch1;
@@ -245,37 +275,20 @@ public class Execution {
                 String tmpTag = input.getTags().get(0);
                 String encodedInput = URLEncoder.encode(tmpTag, StandardCharsets.UTF_8.toString());
 
-                if (platform == "pia") {
+                if (platform.equals("pia")) {
                     driver.get(search1 + encodedInput + search2);
-                } else if (platform == "kakao") {
+                } else { // kakao
                     driver.get(tagsearch + encodedInput);
-                } else {
-                    String code = "";  
-                    switch (tmpTag) {
-                        case "로맨스":
-                            code = "201";
-                            break;
-                        case "판타지":
-                            code = "202";
-                            break;
-                        case "무협":
-                            code = "206";
-                            break;
-                        case "현대판타지":
-                            code = "208";
-                            break;
-                    }
-                    driver.get(tagsearch + code);
                 }
             }
 
 
             WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
-            if (platform == "kakao") {
+            if (platform.equals("kakao")) {
                 JavascriptExecutor js = (JavascriptExecutor) driver;
                 long lastHeight = (long) js.executeScript("return document.body.scrollHeight");
-                int scrollcnt = 0;
-                int scrollmax = 10;
+                int scrollmax = 0;
+                int scrollcnt = 10;
 
                 while (scrollcnt < scrollmax) {
                     // 페이지 끝으로 스크롤
@@ -347,14 +360,9 @@ public class Execution {
                         continue;
                     }
             
-                    // 각 페이지 링크
-                    if (platform == "naver") {
-                        String page = pageLink.getDomAttribute("href");
-                        driver.get("https://series.naver.com/" + page);
-                    } else {
-                        JavascriptExecutor js = (JavascriptExecutor) driver;
-                        js.executeScript("arguments[0].click();", pageLink);
-                    }
+                    // 각 페이지 링크 (naver는 StartNaver로 분리되어 이 경로는 pia만 탐)
+                    JavascriptExecutor js = (JavascriptExecutor) driver;
+                    js.executeScript("arguments[0].click();", pageLink);
             
                     // 상품 목록에서 링크 추출
                     wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(booklist)));
@@ -367,19 +375,12 @@ public class Execution {
                     // 각 상품에 대해 스레드 풀에 작업을 할당
                     for (WebElement link : bookLinks) {
 
-                        if (platform == "naver") {
-                            String name = link.getText();
-                            if (!input.getTitle().isEmpty() && !name.contains(input.getTitle())) {
-                                continue;
-                            }
-                        } else {
-                            WebElement title = link.findElement(By.cssSelector(bookname));
-                            String name = title.getText();
-                            if (!input.getTitle().isEmpty() && !name.contains(input.getTitle())) {
-                                continue;
-                            }
+                        WebElement title = link.findElement(By.cssSelector(bookname));
+                        String name = title.getText();
+                        if (!input.getTitle().isEmpty() && !name.contains(input.getTitle())) {
+                            continue;
                         }
-                                    
+
                         String bookUrl = link.getDomAttribute("href");
                         Future<?> future = executorService.submit(new BookCrawler(bookUrl, platform, books, input));
                         futures.add(future);
@@ -403,6 +404,84 @@ public class Execution {
         } finally {
             driver.quit();
         }
+        return books;
+    }
+
+    // 네이버: 정적 HTML이라 브라우저 없이 jsoup으로 목록+페이지네이션 처리 (가벼움)
+    private List<Book> StartNaver(Book input) {
+        List<Book> books = Collections.synchronizedList(new ArrayList<>());
+        String url = Series;
+
+        try {
+            if (!input.getAuthor().isEmpty()) {
+                String encodedInput = URLEncoder.encode(input.getAuthor(), StandardCharsets.UTF_8.toString());
+                url = SeriesSearch1 + encodedInput + SeriesSearch2;
+            } else if (!input.getTitle().isEmpty()) {
+                String encodedInput = URLEncoder.encode(input.getTitle(), StandardCharsets.UTF_8.toString());
+                url = SeriesSearch1 + encodedInput + SeriesSearch2;
+            } else if (!input.getTags().isEmpty()) {
+                String tmpTag = input.getTags().get(0);
+                String code = "";
+                switch (tmpTag) {
+                    case "로맨스": code = "201"; break;
+                    case "판타지": code = "202"; break;
+                    case "무협": code = "206"; break;
+                    case "현대판타지": code = "208"; break;
+                }
+                url = SeriestagSearch + code;
+            }
+
+            Document firstPage = Jsoup.connect(url).userAgent(BookCrawler.USER_AGENT).timeout(10000).get();
+
+            // 페이지네이션 링크(숫자만) 수집, 없으면 첫 페이지만
+            Set<String> pageUrls = new LinkedHashSet<>();
+            Elements pageLinks = firstPage.select(Seriespage);
+            for (Element pageLink : pageLinks) {
+                if (pageLink.text().trim().matches("\\d+")) {
+                    pageUrls.add("https://series.naver.com" + pageLink.attr("href"));
+                }
+            }
+            if (pageUrls.isEmpty()) {
+                pageUrls.add(url);
+            }
+
+            int totalPage = pageUrls.size();
+            int count = 0;
+
+            for (String pageUrl : pageUrls) {
+                count++;
+                System.out.println("진행률: " + count + "/" + totalPage);
+
+                Document pageDoc = pageUrl.equals(url) ? firstPage : Jsoup.connect(pageUrl).userAgent(BookCrawler.USER_AGENT).timeout(10000).get();
+                Elements bookLinks = pageDoc.select(Serieslist);
+
+                ExecutorService executorService = Executors.newFixedThreadPool(8);
+                List<Future<?>> futures = new ArrayList<>();
+
+                for (Element link : bookLinks) {
+                    String name = link.text();
+                    if (!input.getTitle().isEmpty() && !name.contains(input.getTitle())) {
+                        continue;
+                    }
+                    String bookUrl = link.attr("href");
+                    futures.add(executorService.submit(new BookCrawler(bookUrl, "naver", books, input)));
+                }
+
+                int cnt = 0;
+                for (Future<?> future : futures) {
+                    try {
+                        future.get();
+                        System.out.println(++cnt + "/" + bookLinks.size());
+                    } catch (InterruptedException | ExecutionException e) {
+                        e.printStackTrace();
+                    }
+                }
+                executorService.shutdown();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
         return books;
     }
 }

@@ -34,3 +34,4 @@ launch4j {
     bundledJrePath = 'build/jre'  // JRE 경로 설정
 }
 //jlink --module-path $JAVA_HOME/jmods --add-modules java.base,java.sql --output build/jre
+//gradle createExe
