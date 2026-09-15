@@ -29,28 +29,28 @@ import java.nio.charset.StandardCharsets;
 //입력예시 : Book{title='없음', score=0, tags=[현대판타지, 무협, fgdf, df], author='미정', link='없음', description='합집합', platform='Series KakaoPage '}
 // 카카오 스크롤롤
 class BookCrawler implements Runnable {
-    public String navertitle = "#content > div.end_head > h2";
-    public String naverscore = "#content > div.end_head > div.score_area em";
-    public String navertags = "#content li.info_lst > ul > li:nth-child(2) > span > a";
-    public String naverauthor = "#content li.info_lst > ul > li:nth-child(3) a";
-    public String naverdescription = "div#content div.end_dsc div:first-child";
+    public String navertitle = SelectorConfig.get("naver.title");
+    public String naverscore = SelectorConfig.get("naver.score");
+    public String navertags = SelectorConfig.get("naver.tags");
+    public String naverauthor = SelectorConfig.get("naver.author");
+    public String naverdescription = SelectorConfig.get("naver.description");
     public String naverplatform = "https://series.naver.com/";
 
-    public String kakaotitle = "div.mb-28pxr.flex.w-320pxr.flex-col div.flex.flex-col.items-center span.font-large3-bold.mb-3pxr.text-ellipsis.break-all.text-el-70.line-clamp-2";
-    public String kakaoscore = "div.mb-28pxr.flex.w-320pxr.flex-col div.flex.flex-col.items-center div.flex.items-center:nth-of-type(3) span";
-    public String kakaotags = "div.mb-28pxr.ml-4px.flex.w-632pxr.flex-col.overflow-hidden.rounded-12pxr div.flex.w-full.flex-col.items-center.overflow-hidden div[class*='flex-wrap'] span";
-    public String kakaodescription1 = "div.mb-28pxr.ml-4px.flex.w-632pxr.flex-col.overflow-hidden.rounded-12pxr div.flex.w-full.flex-col.items-center.overflow-hidden div[class*='pb-10pxr'][class*='cursor-pointer']";
-    public String kakaodescription2 = "div.mb-28pxr.ml-4px.flex.w-632pxr.flex-col.overflow-hidden.rounded-12pxr div.flex.w-full.flex-col.items-center.overflow-hidden div[class*='max-h-[216px]']";
-    public String kakaoauthor = "div.mb-28pxr.flex.w-320pxr.flex-col div.flex.flex-col.items-center span.font-small2.mb-6pxr.text-ellipsis.text-el-70.opacity-70.break-word-anywhere.line-clamp-2";
+    public String kakaotitle = SelectorConfig.get("kakao.title");
+    public String kakaoscore = SelectorConfig.get("kakao.score");
+    public String kakaotags = SelectorConfig.get("kakao.tags");
+    public String kakaodescription1 = SelectorConfig.get("kakao.description1");
+    public String kakaodescription2 = SelectorConfig.get("kakao.description2");
+    public String kakaoauthor = SelectorConfig.get("kakao.author");
     public String kakaoplatform = "https://page.kakao.com";
-    
 
-    public String piatitle = "div.epnew-novel-info > div.ep-info-line.epnew-novel-title";
-    public String piascore = "div.epnew-novel-info > div.ep-info-line.info-count1 > div.counter-line-a > p:nth-child(2) > span:nth-child(2)";
-    public String piatags = "div.epnew-novel-info > div.mobile_hidden > div.ep-info-line.epnew-tag > p.writer-tag span";
-    public String piaauthor = "div.epnew-novel-info > div.ep-info-line.epnew-writer > p.in-writer > a";
-    public String piadescription = "div.epnew-novel-info > div.mobile_hidden > div.info-graybox > div.synopsis";
-    
+
+    public String piatitle = SelectorConfig.get("pia.title");
+    public String piascore = SelectorConfig.get("pia.score");
+    public String piatags = SelectorConfig.get("pia.tags");
+    public String piaauthor = SelectorConfig.get("pia.author");
+    public String piadescription = SelectorConfig.get("pia.description");
+
     public String piaplatform = "https://novelpia.com/";
     public static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
@@ -95,60 +95,70 @@ class BookCrawler implements Runnable {
 
     // 네이버, 피아: 정적 HTML이라 브라우저 없이 jsoup으로 처리 (가벼움)
     private void runJsoup() {
-        String booklink = "";
-        try {
-            String title;
-            int score;
-            List<String> booktags = new ArrayList<>();
-            String author;
-            String description;
+        String booklink = platform.equals("naver") ? naverplatform + bookUrl : piaplatform + bookUrl;
+        Exception lastError = null;
 
-            if (platform.equals("naver")) {
-                booklink = naverplatform + bookUrl;
-                Document doc = Jsoup.connect(booklink).userAgent(USER_AGENT).timeout(10000).get();
-                Element titleEl = doc.selectFirst(navertitle);
-                Element scoreEl = doc.selectFirst(naverscore);
-                Elements tagEls = doc.select(navertags);
-                Element authorEl = doc.selectFirst(naverauthor);
-                Element descEl = doc.selectFirst(naverdescription);
-
-                title = titleEl.text();
-                score = (int) Math.round(Double.parseDouble(scoreEl.text()) * 10);
-                for (Element tagEl : tagEls) {
-                    booktags.add(tagEl.text().replace("#", ""));
-                }
-                author = authorEl.text();
-                description = descEl.text();
-            } else { // pia
-                booklink = piaplatform + bookUrl;
-                Document doc = Jsoup.connect(booklink).userAgent(USER_AGENT).timeout(10000).get();
-                Element titleEl = doc.selectFirst(piatitle);
-                Element scoreEl = doc.selectFirst(piascore);
-                Elements tagEls = doc.select(piatags);
-                Element authorEl = doc.selectFirst(piaauthor);
-                Element descEl = doc.selectFirst(piadescription);
-
-                title = titleEl.text();
-                String tmp = scoreEl.text().replace(",", "");
-                score = Integer.parseInt(tmp);
-                for (Element tagEl : tagEls) {
-                    booktags.add(tagEl.text().replace("#", ""));
-                }
-                author = authorEl.text();
-                description = descEl.text();
-            }
-
-            if (isFilteredOut(booktags)) {
+        // 실패시 한번 더 재시도 (네트워크 순간 오류/타임아웃 대비)
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                attemptJsoup(booklink);
                 return;
+            } catch (Exception e) {
+                lastError = e;
             }
+        }
 
-            synchronized (books) {
-                Book book = new Book(title, score, booktags, author, booklink, description.replaceAll("\\s+", " ").trim(), platform);
-                books.add(book);
+        System.out.println("오류 발생: " + booklink);
+        System.out.println("오류 원인: " + (lastError != null ? lastError.getMessage() : "알 수 없음"));
+    }
+
+    private void attemptJsoup(String booklink) throws IOException {
+        String title;
+        int score;
+        List<String> booktags = new ArrayList<>();
+        String author;
+        String description;
+
+        if (platform.equals("naver")) {
+            Document doc = Jsoup.connect(booklink).userAgent(USER_AGENT).timeout(10000).get();
+            Element titleEl = doc.selectFirst(navertitle);
+            Element scoreEl = doc.selectFirst(naverscore);
+            Elements tagEls = doc.select(navertags);
+            Element authorEl = doc.selectFirst(naverauthor);
+            Element descEl = doc.selectFirst(naverdescription);
+
+            title = titleEl.text();
+            score = (int) Math.round(Double.parseDouble(scoreEl.text()) * 10);
+            for (Element tagEl : tagEls) {
+                booktags.add(tagEl.text().replace("#", ""));
             }
-        } catch (Exception e) {
-            System.out.println("오류 발생: " + booklink);
-            System.out.println("오류 원인: " + e.getMessage());
+            author = authorEl.text();
+            description = descEl.text();
+        } else { // pia
+            Document doc = Jsoup.connect(booklink).userAgent(USER_AGENT).timeout(10000).get();
+            Element titleEl = doc.selectFirst(piatitle);
+            Element scoreEl = doc.selectFirst(piascore);
+            Elements tagEls = doc.select(piatags);
+            Element authorEl = doc.selectFirst(piaauthor);
+            Element descEl = doc.selectFirst(piadescription);
+
+            title = titleEl.text();
+            String tmp = scoreEl.text().replace(",", "");
+            score = Integer.parseInt(tmp);
+            for (Element tagEl : tagEls) {
+                booktags.add(tagEl.text().replace("#", ""));
+            }
+            author = authorEl.text();
+            description = descEl.text();
+        }
+
+        if (isFilteredOut(booktags)) {
+            return;
+        }
+
+        synchronized (books) {
+            Book book = new Book(title, score, booktags, author, booklink, description.replaceAll("\\s+", " ").trim(), platform);
+            books.add(book);
         }
     }
 
@@ -230,22 +240,22 @@ public class Execution {
     private String SeriesSearch1 = "https://series.naver.com/search/search.series?t=novel&q=";
     private String SeriesSearch2 = "#";
     private String SeriestagSearch = "https://series.naver.com/novel/categoryProductList.series?categoryTypeCode=genre&genreCode=";
-    private String Serieslist = "#content > div.com_srch > div:nth-child(5) > ul > li > div > h3 > a";
-    private String Seriespage = "#content > div.com_srch > p > a";
+    private String Serieslist = SelectorConfig.get("naver.list");
+    private String Seriespage = SelectorConfig.get("naver.page");
 
     private String Kakao = "https://page.kakao.com/menu/10011/screen/84?is_complete=false";
     private String KakaoSearch1 = "https://page.kakao.com/search/result?keyword=";
     private String KakaoSearch2 = "&categoryUid=11";
     private String KakaotagSearch = "https://page.kakao.com/search/themekeyword?filterList=";
-    private String Kakaolist = "#__next > div > div.flex.w-full.grow.flex-col.px-122pxr > div.mb-84pxr > div.w-full.overflow-hidden.my-5pxr > div > div > div > a";
-    private String Kakaoname = "#__next > div > div.flex.w-full.grow.flex-col.px-122pxr > div.mb-84pxr > div.w-full.overflow-hidden.my-5pxr > div > div > div > a > div > div.flex.flex-col > span";
+    private String Kakaolist = SelectorConfig.get("kakao.list");
+    private String Kakaoname = SelectorConfig.get("kakao.name");
 
     private String Pia = "https://novelpia.com/top100/complete/weekly/view/all/plus";
     private String PiaSearch1 = "https://novelpia.com/search/all//1/";
     private String PiaSearch2 = "?page=1&rows=30&novel_type=&start_count_book=&end_count_book=&novel_age=&start_days=&sort_col=last_viewdate&novel_genre=&block_out=0&block_stop=0&is_contest=0&list_display=list";
-    private String Pialist = "#search_content > div.rand-lists.list > div.rand-wrapper > div.rand-item-wrapper > div > a";
-    private String Pianame = "#search_content > div.rand-lists.list > div.rand-wrapper > div.rand-item-wrapper > div > a > div > div.item-txt";
-    private String Piapage = "a.page-link";
+    private String Pialist = SelectorConfig.get("pia.list");
+    private String Pianame = SelectorConfig.get("pia.name");
+    private String Piapage = SelectorConfig.get("pia.page");
 
     public List<Book> Start(String platform, Book input) {
         if (platform.equals("naver")) {
@@ -455,14 +465,20 @@ public class Execution {
         return result;
     }
 
-    // 네이버 장르명 -> 카테고리 코드
+    // 네이버 장르명 -> 카테고리 코드 (네이버 시리즈에 실제 존재하는 장르 전체)
     private static String naverGenreCode(String tag) {
         switch (tag) {
             case "로맨스": return "201";
+            case "로판":
+            case "로맨스판타지": return "207";
             case "판타지": return "202";
-            case "무협": return "206";
+            case "현판":
             case "현대판타지": return "208";
-            default: return "";
+            case "무협": return "206";
+            case "미스터리": return "203";
+            case "라이트노벨": return "205";
+            case "BL": return "209";
+            default: return null; // 매핑 안 되는 태그(자유 입력 태그 등)는 네이버에서 검색 불가
         }
     }
 
@@ -481,7 +497,12 @@ public class Execution {
                 searchUrls.add(SeriesSearch1 + encodedInput + SeriesSearch2);
             } else {
                 for (String tag : input.getTags()) {
-                    searchUrls.add(SeriestagSearch + naverGenreCode(tag));
+                    String code = naverGenreCode(tag);
+                    if (code == null) {
+                        System.out.println("네이버는 '" + tag + "' 장르를 지원하지 않아 건너뜀");
+                        continue;
+                    }
+                    searchUrls.add(SeriestagSearch + code);
                 }
             }
         } catch (Exception e) {
