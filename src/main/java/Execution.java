@@ -283,130 +283,71 @@ public class Execution {
         // 브라우저 안띄우기 (이미지 로딩도 꺼서 로드 속도 개선)
         WebDriver driver = new ChromeDriver(BookCrawler.buildHeadlessOptions());
 
+        // 검색할 URL 목록 (태그 여러개 선택시 태그별로 각각 검색, 결과는 뒤에서 합침)
+        List<String> searchUrls = new ArrayList<>();
         try {
-             // 웹 페이지 열기
             if (!input.getAuthor().isEmpty()) { // 저자검색
                 String encodedInput = URLEncoder.encode(input.getAuthor(), StandardCharsets.UTF_8.toString());
-                driver.get(search1 + encodedInput + search2);
-            } else if (!input.getTitle().isEmpty()) { // 제목 검색 
+                searchUrls.add(search1 + encodedInput + search2);
+            } else if (!input.getTitle().isEmpty()) { // 제목 검색
                 String encodedInput = URLEncoder.encode(input.getTitle(), StandardCharsets.UTF_8.toString());
-                driver.get(search1 + encodedInput + search2);
-                //System.out.println(search1 + encodedInput + search2);
-            } else if (!input.getTags().isEmpty()) { // 태그(장르) 검색
-                String tmpTag = input.getTags().get(0);
-                String encodedInput = URLEncoder.encode(tmpTag, StandardCharsets.UTF_8.toString());
-
-                if (platform.equals("pia")) {
-                    driver.get(search1 + encodedInput + search2);
-                } else { // kakao
-                    driver.get(tagsearch + encodedInput);
+                searchUrls.add(search1 + encodedInput + search2);
+            } else { // 태그(장르) 검색: 선택된 태그마다 각각 검색
+                for (String tag : input.getTags()) {
+                    String encodedInput = URLEncoder.encode(tag, StandardCharsets.UTF_8.toString());
+                    if (platform.equals("pia")) {
+                        searchUrls.add(search1 + encodedInput + search2);
+                    } else { // kakao
+                        searchUrls.add(tagsearch + encodedInput);
+                    }
                 }
             }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
 
+        try {
+            // 스레드 풀/드라이버풀은 태그 여러개 돌아도 한번만 만들어 재사용
+            ExecutorService executorService = Executors.newFixedThreadPool(4);
+            Set<WebDriver> sessionDrivers = Collections.synchronizedSet(new HashSet<>());
+            ThreadLocal<WebDriver> driverPool = ThreadLocal.withInitial(() -> {
+                WebDriver d = new ChromeDriver(BookCrawler.buildHeadlessOptions());
+                sessionDrivers.add(d);
+                return d;
+            });
 
-            WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
-            if (platform.equals("kakao")) {
-                JavascriptExecutor js = (JavascriptExecutor) driver;
-                long lastHeight = (long) js.executeScript("return document.body.scrollHeight");
-                int scrollmax = 0;
-                int scrollcnt = 10;
+            for (String url : searchUrls) {
+                driver.get(url);
 
-                while (scrollcnt < scrollmax) {
-                    // 페이지 끝으로 스크롤
-                    js.executeScript("window.scrollTo(0, document.body.scrollHeight)");
-                    wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(booklist)));
-                
-                    // 스크롤 높이가 변하지 않으면 종료
-                    long newHeight = (long) js.executeScript("return document.body.scrollHeight");
-                    if (newHeight == lastHeight) {
-                        break;  // 높이가 변하지 않으면 종료
-                    }
-                
-                    // 마지막 높이를 새로운 높이로 업데이트
-                    lastHeight = newHeight;
-                
-                    // 시도 횟수 증가
-                    scrollcnt++;
-                }
-
-                // 상품 목록에서 링크 추출
-                List<WebElement> bookLinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(booklist)));
-
-                // 스레드 풀 생성
-                ExecutorService executorService = Executors.newFixedThreadPool(4);
-                List<Future<?>> futures = new ArrayList<>();
-                int cnt = 0;
-
-                // 이번 검색 세션 전용 드라이버풀 (스레드풀 워커당 하나씩 재사용, 책마다 새로 안 띄움)
-                Set<WebDriver> sessionDrivers = Collections.synchronizedSet(new HashSet<>());
-                ThreadLocal<WebDriver> driverPool = ThreadLocal.withInitial(() -> {
-                    WebDriver d = new ChromeDriver(BookCrawler.buildHeadlessOptions());
-                    sessionDrivers.add(d);
-                    return d;
-                });
-
-                // 각 상품에 대해 스레드 풀에 작업을 할당
-                for (WebElement link : bookLinks) {
-
-                    WebElement title = link.findElement(By.cssSelector(bookname));
-                    String name = title.getText();
-                    if (!input.getTitle().isEmpty() && !name.contains(input.getTitle())) {
-                        continue;
-                    }
-
-                    String bookUrl = link.getDomAttribute("href");
-                    Future<?> future = executorService.submit(new BookCrawler(bookUrl, platform, books, input, driverPool));
-                    futures.add(future);
-                }
-
-                // 모든 작업이 완료될 때까지 대기
-                for (Future<?> future : futures) {
-                    try {
-                        future.get();
-                        System.out.println(++cnt+ "/" + bookLinks.size());
-                    } catch (InterruptedException | ExecutionException e) {
-                        e.printStackTrace();
-                    }
-                }
-
-                executorService.shutdown();
-                for (WebDriver d : sessionDrivers) {
-                    try {
-                        d.quit();
-                    } catch (Exception ignored) {
-                    }
-                }
-
-            } else {
-                List<WebElement> pageLinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(sitepage)));
-                System.out.println("페이지 링크: "+pageLinks.size());
-                int totalpage = pageLinks.size();
-                int count = 0;
-
-                // 페이지마다 새로 만들지 않고 하나만 만들어 재사용
-                ExecutorService executorService = Executors.newFixedThreadPool(4);
-
-                for (WebElement pageLink : pageLinks) {
-                    String linkText = pageLink.getText();
-                    int cnt = 0;
-                    count++;
-                    System.out.println("진행률: "+count+ "/" +totalpage);
-                    System.out.println(pageLink.getText());
-                                          
-                    // 숫자가 아닌 페이지 버튼은 클릭하지 않도록 필터링
-                    if (!linkText.matches("\\d+")) {
-                        continue;
-                    }
-            
-                    // 각 페이지 링크 (naver는 StartNaver로 분리되어 이 경로는 pia만 탐)
+                WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
+                if (platform.equals("kakao")) {
                     JavascriptExecutor js = (JavascriptExecutor) driver;
-                    js.executeScript("arguments[0].click();", pageLink);
-            
-                    // 상품 목록에서 링크 추출
-                    wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(booklist)));
-                    List<WebElement> bookLinks = driver.findElements(By.cssSelector(booklist));
+                    long lastHeight = (long) js.executeScript("return document.body.scrollHeight");
+                    int scrollmax = 10; // 최대 스크롤 시도 횟수
+                    int scrollcnt = 0;
 
+                    while (scrollcnt < scrollmax) {
+                        // 페이지 끝으로 스크롤
+                        js.executeScript("window.scrollTo(0, document.body.scrollHeight)");
+                        wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(booklist)));
+
+                        // 스크롤 높이가 변하지 않으면 종료
+                        long newHeight = (long) js.executeScript("return document.body.scrollHeight");
+                        if (newHeight == lastHeight) {
+                            break;  // 높이가 변하지 않으면 종료
+                        }
+
+                        // 마지막 높이를 새로운 높이로 업데이트
+                        lastHeight = newHeight;
+
+                        // 시도 횟수 증가
+                        scrollcnt++;
+                    }
+
+                    // 상품 목록에서 링크 추출
+                    List<WebElement> bookLinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(booklist)));
                     List<Future<?>> futures = new ArrayList<>();
+                    int cnt = 0;
 
                     // 각 상품에 대해 스레드 풀에 작업을 할당
                     for (WebElement link : bookLinks) {
@@ -418,7 +359,7 @@ public class Execution {
                         }
 
                         String bookUrl = link.getDomAttribute("href");
-                        Future<?> future = executorService.submit(new BookCrawler(bookUrl, platform, books, input));
+                        Future<?> future = executorService.submit(new BookCrawler(bookUrl, platform, books, input, driverPool));
                         futures.add(future);
                     }
 
@@ -431,92 +372,176 @@ public class Execution {
                             e.printStackTrace();
                         }
                     }
+
+                } else {
+                    List<WebElement> pageLinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(sitepage)));
+                    System.out.println("페이지 링크: "+pageLinks.size());
+                    int totalpage = pageLinks.size();
+                    int count = 0;
+
+                    for (WebElement pageLink : pageLinks) {
+                        String linkText = pageLink.getText();
+                        int cnt = 0;
+                        count++;
+                        System.out.println("진행률: "+count+ "/" +totalpage);
+                        System.out.println(pageLink.getText());
+
+                        // 숫자가 아닌 페이지 버튼은 클릭하지 않도록 필터링
+                        if (!linkText.matches("\\d+")) {
+                            continue;
+                        }
+
+                        // 각 페이지 링크 (naver는 StartNaver로 분리되어 이 경로는 pia만 탐)
+                        JavascriptExecutor js = (JavascriptExecutor) driver;
+                        js.executeScript("arguments[0].click();", pageLink);
+
+                        // 상품 목록에서 링크 추출
+                        wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(booklist)));
+                        List<WebElement> bookLinks = driver.findElements(By.cssSelector(booklist));
+
+                        List<Future<?>> futures = new ArrayList<>();
+
+                        // 각 상품에 대해 스레드 풀에 작업을 할당
+                        for (WebElement link : bookLinks) {
+
+                            WebElement title = link.findElement(By.cssSelector(bookname));
+                            String name = title.getText();
+                            if (!input.getTitle().isEmpty() && !name.contains(input.getTitle())) {
+                                continue;
+                            }
+
+                            String bookUrl = link.getDomAttribute("href");
+                            Future<?> future = executorService.submit(new BookCrawler(bookUrl, platform, books, input));
+                            futures.add(future);
+                        }
+
+                        // 모든 작업이 완료될 때까지 대기
+                        for (Future<?> future : futures) {
+                            try {
+                                future.get();
+                                System.out.println(++cnt+ "/" + bookLinks.size());
+                            } catch (InterruptedException | ExecutionException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
                 }
-                executorService.shutdown();
+            }
+
+            executorService.shutdown();
+            for (WebDriver d : sessionDrivers) {
+                try {
+                    d.quit();
+                } catch (Exception ignored) {
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
             driver.quit();
         }
-        return books;
+        return dedupeByLink(books);
+    }
+
+    // 태그 여러개 검색시 같은 책이 여러 태그 목록에 겹쳐 나올 수 있어 링크 기준으로 중복 제거
+    private static List<Book> dedupeByLink(List<Book> books) {
+        List<Book> result = new ArrayList<>();
+        Set<String> seenLinks = new HashSet<>();
+        for (Book book : books) {
+            if (seenLinks.add(book.getLink())) {
+                result.add(book);
+            }
+        }
+        return result;
+    }
+
+    // 네이버 장르명 -> 카테고리 코드
+    private static String naverGenreCode(String tag) {
+        switch (tag) {
+            case "로맨스": return "201";
+            case "판타지": return "202";
+            case "무협": return "206";
+            case "현대판타지": return "208";
+            default: return "";
+        }
     }
 
     // 네이버: 정적 HTML이라 브라우저 없이 jsoup으로 목록+페이지네이션 처리 (가벼움)
     private List<Book> StartNaver(Book input) {
         List<Book> books = Collections.synchronizedList(new ArrayList<>());
-        String url = Series;
 
+        // 검색할 URL 목록 (태그 여러개 선택시 태그별로 각각 검색, 결과는 뒤에서 합침)
+        List<String> searchUrls = new ArrayList<>();
         try {
             if (!input.getAuthor().isEmpty()) {
                 String encodedInput = URLEncoder.encode(input.getAuthor(), StandardCharsets.UTF_8.toString());
-                url = SeriesSearch1 + encodedInput + SeriesSearch2;
+                searchUrls.add(SeriesSearch1 + encodedInput + SeriesSearch2);
             } else if (!input.getTitle().isEmpty()) {
                 String encodedInput = URLEncoder.encode(input.getTitle(), StandardCharsets.UTF_8.toString());
-                url = SeriesSearch1 + encodedInput + SeriesSearch2;
-            } else if (!input.getTags().isEmpty()) {
-                String tmpTag = input.getTags().get(0);
-                String code = "";
-                switch (tmpTag) {
-                    case "로맨스": code = "201"; break;
-                    case "판타지": code = "202"; break;
-                    case "무협": code = "206"; break;
-                    case "현대판타지": code = "208"; break;
-                }
-                url = SeriestagSearch + code;
-            }
-
-            Document firstPage = Jsoup.connect(url).userAgent(BookCrawler.USER_AGENT).timeout(10000).get();
-
-            // 페이지네이션 링크(숫자만) 수집, 없으면 첫 페이지만
-            Set<String> pageUrls = new LinkedHashSet<>();
-            Elements pageLinks = firstPage.select(Seriespage);
-            for (Element pageLink : pageLinks) {
-                if (pageLink.text().trim().matches("\\d+")) {
-                    pageUrls.add("https://series.naver.com" + pageLink.attr("href"));
+                searchUrls.add(SeriesSearch1 + encodedInput + SeriesSearch2);
+            } else {
+                for (String tag : input.getTags()) {
+                    searchUrls.add(SeriestagSearch + naverGenreCode(tag));
                 }
             }
-            if (pageUrls.isEmpty()) {
-                pageUrls.add(url);
-            }
-
-            int totalPage = pageUrls.size();
-            int count = 0;
-
-            for (String pageUrl : pageUrls) {
-                count++;
-                System.out.println("진행률: " + count + "/" + totalPage);
-
-                Document pageDoc = pageUrl.equals(url) ? firstPage : Jsoup.connect(pageUrl).userAgent(BookCrawler.USER_AGENT).timeout(10000).get();
-                Elements bookLinks = pageDoc.select(Serieslist);
-
-                ExecutorService executorService = Executors.newFixedThreadPool(8);
-                List<Future<?>> futures = new ArrayList<>();
-
-                for (Element link : bookLinks) {
-                    String name = link.text();
-                    if (!input.getTitle().isEmpty() && !name.contains(input.getTitle())) {
-                        continue;
-                    }
-                    String bookUrl = link.attr("href");
-                    futures.add(executorService.submit(new BookCrawler(bookUrl, "naver", books, input)));
-                }
-
-                int cnt = 0;
-                for (Future<?> future : futures) {
-                    try {
-                        future.get();
-                        System.out.println(++cnt + "/" + bookLinks.size());
-                    } catch (InterruptedException | ExecutionException e) {
-                        e.printStackTrace();
-                    }
-                }
-                executorService.shutdown();
-            }
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
 
-        return books;
+        ExecutorService executorService = Executors.newFixedThreadPool(8);
+
+        for (String url : searchUrls) {
+            try {
+                Document firstPage = Jsoup.connect(url).userAgent(BookCrawler.USER_AGENT).timeout(10000).get();
+
+                // 페이지네이션 링크(숫자만) 수집, 없으면 첫 페이지만
+                Set<String> pageUrls = new LinkedHashSet<>();
+                Elements pageLinks = firstPage.select(Seriespage);
+                for (Element pageLink : pageLinks) {
+                    if (pageLink.text().trim().matches("\\d+")) {
+                        pageUrls.add("https://series.naver.com" + pageLink.attr("href"));
+                    }
+                }
+                if (pageUrls.isEmpty()) {
+                    pageUrls.add(url);
+                }
+
+                int totalPage = pageUrls.size();
+                int count = 0;
+
+                for (String pageUrl : pageUrls) {
+                    count++;
+                    System.out.println("진행률: " + count + "/" + totalPage);
+
+                    Document pageDoc = pageUrl.equals(url) ? firstPage : Jsoup.connect(pageUrl).userAgent(BookCrawler.USER_AGENT).timeout(10000).get();
+                    Elements bookLinks = pageDoc.select(Serieslist);
+
+                    List<Future<?>> futures = new ArrayList<>();
+                    for (Element link : bookLinks) {
+                        String name = link.text();
+                        if (!input.getTitle().isEmpty() && !name.contains(input.getTitle())) {
+                            continue;
+                        }
+                        String bookUrl = link.attr("href");
+                        futures.add(executorService.submit(new BookCrawler(bookUrl, "naver", books, input)));
+                    }
+
+                    int cnt = 0;
+                    for (Future<?> future : futures) {
+                        try {
+                            future.get();
+                            System.out.println(++cnt + "/" + bookLinks.size());
+                        } catch (InterruptedException | ExecutionException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        executorService.shutdown();
+        return dedupeByLink(books);
     }
 }

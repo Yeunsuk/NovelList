@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.util.List;
 import io.github.bonigarcia.wdm.WebDriverManager;
 import java.util.Comparator;
+import javax.swing.SwingUtilities;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
@@ -55,25 +56,25 @@ public class Main {
             if (input.getPlatform().contains("Series")) {
                 Execution ex1 = new Execution();
                 List<Book> naver = ex1.Start("naver", input);
-                //ui.End(naver, "Naver");
                 naver.sort(Book.Sort);
                 saveBookList(naver, input.toString());
+                SwingUtilities.invokeLater(() -> ui.End(naver, "Naver"));
             }
 
             if (input.getPlatform().contains("Kakao")) {
                 Execution ex2 = new Execution();
                 List<Book> kakao = ex2.Start("kakao", input);
-                //ui.End(kakao, "Kakao");
                 kakao.sort(Book.Sort);
                 saveBookList(kakao, input.toString());
+                SwingUtilities.invokeLater(() -> ui.End(kakao, "Kakao"));
             }
 
             if (input.getPlatform().contains("Pia")) {
                 Execution ex3 = new Execution();
                 List<Book> Pia = ex3.Start("pia", input);
-                //ui.End(Pia, "Pia");
                 Pia.sort(Book.Sort);
                 saveBookList(Pia, input.toString());
+                SwingUtilities.invokeLater(() -> ui.End(Pia, "Pia"));
             }
         });
     }
