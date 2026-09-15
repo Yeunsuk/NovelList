@@ -14,19 +14,19 @@ class BookCrawlerFilterTest {
     }
 
     @Test
-    void unionKeepsBookOnlyWhenAllQueryTagsPresent() {
+    void unionKeepsBookWhenAnyQueryTagPresent() {
         BookCrawler crawler = crawlerWith("합집합", List.of("판타지", "무협"));
 
-        assertFalse(crawler.isFilteredOut(List.of("판타지", "무협", "완결")));
-        assertTrue(crawler.isFilteredOut(List.of("판타지"))); // 무협 빠짐 -> 걸러짐
+        assertFalse(crawler.isFilteredOut(List.of("판타지", "로맨스"))); // 하나라도 겹치면 통과
+        assertTrue(crawler.isFilteredOut(List.of("로맨스", "완결"))); // 둘 다 없음 -> 걸러짐
     }
 
     @Test
-    void intersectionKeepsBookWhenAnyQueryTagPresent() {
+    void intersectionKeepsBookOnlyWhenAllQueryTagsPresent() {
         BookCrawler crawler = crawlerWith("교집합", List.of("판타지", "무협"));
 
-        assertFalse(crawler.isFilteredOut(List.of("판타지", "로맨스")));
-        assertTrue(crawler.isFilteredOut(List.of("로맨스", "완결"))); // 둘 다 없음 -> 걸러짐
+        assertFalse(crawler.isFilteredOut(List.of("판타지", "무협", "완결")));
+        assertTrue(crawler.isFilteredOut(List.of("판타지"))); // 무협 빠짐 -> 걸러짐
     }
 
     @Test

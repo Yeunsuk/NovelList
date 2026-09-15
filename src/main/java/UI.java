@@ -100,9 +100,12 @@ public class UI {
                 String author = authorField.getText();
                 String input_tag = tagField.getText();
                 String[] tagarr = input_tag.split(",");
-                
+
                 for (String tag : tagarr) {
-                    tags.add(tag.trim());
+                    String trimmed = tag.trim();
+                    if (!trimmed.isEmpty()) {
+                        tags.add(trimmed);
+                    }
                 }
                 
 
@@ -129,22 +132,28 @@ public class UI {
     public void End(List<Book> booklist, String platform) {
         // 프레임 설정
         JFrame frame = new JFrame(platform);
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE); // 결과창 하나 닫는다고 앱 전체가 꺼지면 안 됨
         frame.setSize(400, 600);
-        
+
         // 스크롤 가능한 컨테이너
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        
-        // 각 책을 표시하는 레이블 추가
-        for (Book book : booklist) {
-            panel.add(createBookPanel(book));
-            panel.add(Box.createVerticalStrut(10));
+
+        if (booklist.isEmpty()) {
+            JLabel noDataLabel = new JLabel("No data", JLabel.CENTER);
+            noDataLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+            panel.add(noDataLabel);
+        } else {
+            // 각 책을 표시하는 레이블 추가
+            for (Book book : booklist) {
+                panel.add(createBookPanel(book));
+                panel.add(Box.createVerticalStrut(10));
+            }
         }
-        
+
         // 스크롤 설정
         JScrollPane scrollPane = new JScrollPane(panel);
-        
+
         frame.add(scrollPane);
         frame.setVisible(true);
     }

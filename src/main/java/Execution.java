@@ -20,6 +20,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -224,12 +225,12 @@ class BookCrawler implements Runnable {
         }
     }
 
-    // 태그 연산 필터 (합집합/교집합)
+    // 태그 연산 필터 (합집합=OR: 하나라도 겹치면 통과 / 교집합=AND: 선택한 태그 전부 있어야 통과)
     boolean isFilteredOut(List<String> booktags) {
         if (input.getTagOperation().equals("합집합")) {
-            return input.getTags() != null && input.getTags().stream().anyMatch(tag -> !booktags.contains(tag));
+            return input.getTags() != null && !input.getTags().isEmpty() && input.getTags().stream().noneMatch(booktags::contains);
         } else if (input.getTagOperation().equals("교집합")) {
-            return input.getTags() != null && booktags.stream().noneMatch(input.getTags()::contains);
+            return input.getTags() != null && input.getTags().stream().anyMatch(tag -> !booktags.contains(tag));
         }
         return false;
     }
@@ -245,6 +246,8 @@ public class Execution {
     private String SeriestagSearch = "https://series.naver.com/novel/categoryProductList.series?categoryTypeCode=genre&genreCode=";
     private String Serieslist = SelectorConfig.get("naver.list");
     private String Seriespage = SelectorConfig.get("naver.page");
+    private String SerieslistGenre = SelectorConfig.get("naver.list.genre");
+    private String SeriespageGenre = SelectorConfig.get("naver.page.genre");
 
     private String Kakao = "https://page.kakao.com/menu/10011/screen/84?is_complete=false";
     private String KakaoSearch1 = "https://page.kakao.com/search/result?keyword=";
@@ -260,9 +263,9 @@ public class Execution {
     private String Pianame = SelectorConfig.get("pia.name");
     private String Piapage = SelectorConfig.get("pia.page");
 
-    public List<Book> Start(String platform, SearchQuery input) {
+    public List<Book> Start(String platform, SearchQuery input, Consumer<String> onProgress) {
         if (platform.equals("naver")) {
-            return StartNaver(input);
+            return StartNaver(input, onProgress);
         }
 
         List<Book> books = Collections.synchronizedList(new ArrayList<>());
@@ -307,17 +310,24 @@ public class Execution {
                 searchUrls.add(search1 + encodedInput + search2);
             } else { // 태그(장르) 검색: 선택된 태그마다 각각 검색
                 for (String tag : input.getTags()) {
-                    String encodedInput = URLEncoder.encode(tag, StandardCharsets.UTF_8.toString());
                     if (platform.equals("pia")) {
+                        String encodedInput = URLEncoder.encode(tag, StandardCharsets.UTF_8.toString());
                         searchUrls.add(search1 + encodedInput + search2);
-                    } else { // kakao
-                        searchUrls.add(tagsearch + encodedInput);
+                    } else { // kakao: 장르는 키워드검색이 아니라 subcategory_uid로 필터링
+                        String code = kakaoGenreCode(tag);
+                        if (code == null) {
+                            log.warn("카카오는 '{}' 장르를 지원하지 않아 건너뜀", tag);
+                            continue;
+                        }
+                        searchUrls.add(site + "&subcategory_uid=" + code);
                     }
                 }
             }
         } catch (Exception e) {
             log.error("검색 URL 생성 실패", e);
         }
+
+        onProgress.accept(platform + ": 검색 시작 (" + searchUrls.size() + "개 조건)");
 
         try {
             // 스레드 풀/드라이버풀은 태그 여러개 돌아도 한번만 만들어 재사용
@@ -381,6 +391,7 @@ public class Execution {
                         try {
                             future.get();
                             log.info("{}/{}", ++cnt, bookLinks.size());
+                            onProgress.accept(platform + ": " + cnt + "/" + bookLinks.size() + " 처리 중");
                         } catch (InterruptedException | ExecutionException e) {
                             log.error("크롤링 작업 실패", e);
                         }
@@ -397,6 +408,7 @@ public class Execution {
                         int cnt = 0;
                         count++;
                         log.info("진행률: {}/{} ({})", count, totalpage, pageLink.getText());
+                        onProgress.accept(platform + ": 페이지 " + count + "/" + totalpage);
 
                         // 숫자가 아닌 페이지 버튼은 클릭하지 않도록 필터링
                         if (!linkText.matches("\\d+")) {
@@ -432,6 +444,7 @@ public class Execution {
                             try {
                                 future.get();
                                 log.info("{}/{}", ++cnt, bookLinks.size());
+                                onProgress.accept(platform + ": " + cnt + "/" + bookLinks.size() + " 처리 중 (페이지 " + count + "/" + totalpage + ")");
                             } catch (InterruptedException | ExecutionException e) {
                                 log.error("크롤링 작업 실패", e);
                             }
@@ -449,10 +462,13 @@ public class Execution {
             }
         } catch (Exception e) {
             log.error("크롤링 중 오류", e);
+            onProgress.accept(platform + ": 오류 발생 - " + e.getMessage());
         } finally {
             driver.quit();
         }
-        return dedupeByLink(books);
+        List<Book> result = dedupeByLink(books);
+        onProgress.accept(platform + ": 완료 (" + result.size() + "건)");
+        return result;
     }
 
     // 태그 여러개 검색시 같은 책이 여러 태그 목록에 겹쳐 나올 수 있어 링크 기준으로 중복 제거
@@ -484,8 +500,23 @@ public class Execution {
         }
     }
 
+    // 카카오페이지 장르명 -> subcategory_uid (실제 사이트에서 확인함, 2026-09 기준)
+    static String kakaoGenreCode(String tag) {
+        switch (tag) {
+            case "판타지": return "86";
+            case "현판":
+            case "현대판타지": return "120";
+            case "로맨스": return "89";
+            case "로판":
+            case "로맨스판타지": return "117";
+            case "무협": return "87";
+            case "BL": return "123";
+            default: return null; // 매핑 안 되는 태그(자유 입력 태그 등)는 카카오에서 장르 검색 불가
+        }
+    }
+
     // 네이버: 정적 HTML이라 브라우저 없이 jsoup으로 목록+페이지네이션 처리 (가벼움)
-    private List<Book> StartNaver(SearchQuery input) {
+    private List<Book> StartNaver(SearchQuery input, Consumer<String> onProgress) {
         List<Book> books = Collections.synchronizedList(new ArrayList<>());
 
         // 검색할 URL 목록 (태그 여러개 선택시 태그별로 각각 검색, 결과는 뒤에서 합침)
@@ -511,6 +542,7 @@ public class Execution {
             log.error("검색 URL 생성 실패", e);
         }
 
+        onProgress.accept("naver: 검색 시작 (" + searchUrls.size() + "개 조건)");
         ExecutorService executorService = Executors.newFixedThreadPool(8);
 
         for (String url : searchUrls) {
@@ -518,8 +550,12 @@ public class Execution {
                 Document firstPage = Jsoup.connect(url).userAgent(BookCrawler.USER_AGENT).timeout(10000).get();
 
                 // 페이지네이션 링크(숫자만) 수집, 없으면 첫 페이지만
+                // 검색결과 페이지(com_srch)와 장르 카테고리 페이지(lst_thum_wrap)는 템플릿이 달라서 셀렉터도 다름
                 Set<String> pageUrls = new LinkedHashSet<>();
                 Elements pageLinks = firstPage.select(Seriespage);
+                if (pageLinks.isEmpty()) {
+                    pageLinks = firstPage.select(SeriespageGenre);
+                }
                 for (Element pageLink : pageLinks) {
                     if (pageLink.text().trim().matches("\\d+")) {
                         pageUrls.add("https://series.naver.com" + pageLink.attr("href"));
@@ -535,9 +571,13 @@ public class Execution {
                 for (String pageUrl : pageUrls) {
                     count++;
                     log.info("진행률: {}/{}", count, totalPage);
+                    onProgress.accept("naver: 페이지 " + count + "/" + totalPage);
 
                     Document pageDoc = pageUrl.equals(url) ? firstPage : Jsoup.connect(pageUrl).userAgent(BookCrawler.USER_AGENT).timeout(10000).get();
                     Elements bookLinks = pageDoc.select(Serieslist);
+                    if (bookLinks.isEmpty()) {
+                        bookLinks = pageDoc.select(SerieslistGenre);
+                    }
 
                     List<Future<?>> futures = new ArrayList<>();
                     for (Element link : bookLinks) {
@@ -554,6 +594,7 @@ public class Execution {
                         try {
                             future.get();
                             log.info("{}/{}", ++cnt, bookLinks.size());
+                            onProgress.accept("naver: " + cnt + "/" + bookLinks.size() + " 처리 중 (페이지 " + count + "/" + totalPage + ")");
                         } catch (InterruptedException | ExecutionException e) {
                             log.error("크롤링 작업 실패", e);
                         }
@@ -561,10 +602,13 @@ public class Execution {
                 }
             } catch (IOException e) {
                 log.error("페이지 조회 실패: {}", url, e);
+                onProgress.accept("naver: 오류 발생 - " + e.getMessage());
             }
         }
 
         executorService.shutdown();
-        return dedupeByLink(books);
+        List<Book> result = dedupeByLink(books);
+        onProgress.accept("naver: 완료 (" + result.size() + "건)");
+        return result;
     }
 }

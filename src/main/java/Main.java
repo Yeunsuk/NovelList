@@ -57,9 +57,11 @@ public class Main {
         //UI 관련 코드: 검색 버튼 클릭 시 바로 크롤링 실행 (폴링 없음)
         UI ui = new UI();
         ui.First(query -> {
+            ProgressWindow progress = new ProgressWindow();
+
             if (query.getPlatforms().contains("Series")) {
                 Execution ex1 = new Execution();
-                List<Book> naver = ex1.Start("naver", query);
+                List<Book> naver = ex1.Start("naver", query, progress::update);
                 naver.sort(Book.Sort);
                 saveBookList(naver, buildFileName("naver", query));
                 SwingUtilities.invokeLater(() -> ui.End(naver, "Naver"));
@@ -67,7 +69,7 @@ public class Main {
 
             if (query.getPlatforms().contains("Kakao")) {
                 Execution ex2 = new Execution();
-                List<Book> kakao = ex2.Start("kakao", query);
+                List<Book> kakao = ex2.Start("kakao", query, progress::update);
                 kakao.sort(Book.Sort);
                 saveBookList(kakao, buildFileName("kakao", query));
                 SwingUtilities.invokeLater(() -> ui.End(kakao, "Kakao"));
@@ -75,11 +77,13 @@ public class Main {
 
             if (query.getPlatforms().contains("Pia")) {
                 Execution ex3 = new Execution();
-                List<Book> pia = ex3.Start("pia", query);
+                List<Book> pia = ex3.Start("pia", query, progress::update);
                 pia.sort(Book.Sort);
                 saveBookList(pia, buildFileName("pia", query));
                 SwingUtilities.invokeLater(() -> ui.End(pia, "Pia"));
             }
+
+            progress.update("전체 검색 완료");
         });
     }
 }

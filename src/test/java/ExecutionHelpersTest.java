@@ -27,6 +27,22 @@ class ExecutionHelpersTest {
     }
 
     @Test
+    void kakaoGenreCodeMapsKnownGenres() {
+        assertEquals("86", Execution.kakaoGenreCode("판타지"));
+        assertEquals("120", Execution.kakaoGenreCode("현대판타지"));
+        assertEquals("120", Execution.kakaoGenreCode("현판"));
+        assertEquals("89", Execution.kakaoGenreCode("로맨스"));
+        assertEquals("117", Execution.kakaoGenreCode("로판"));
+        assertEquals("87", Execution.kakaoGenreCode("무협"));
+        assertEquals("123", Execution.kakaoGenreCode("BL"));
+    }
+
+    @Test
+    void kakaoGenreCodeReturnsNullForUnknownTag() {
+        assertNull(Execution.kakaoGenreCode("아무말이나입력한태그"));
+    }
+
+    @Test
     void dedupeByLinkKeepsFirstOccurrenceOnly() {
         Book a = new Book("A", 10, new ArrayList<>(), "", "link1", "", "naver");
         Book b = new Book("A중복", 5, new ArrayList<>(), "", "link1", "", "naver");
