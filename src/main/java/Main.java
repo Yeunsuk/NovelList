@@ -49,54 +49,33 @@ public class Main {
             WebDriverManager.chromedriver().setup();
         }
 
-        //UI 관련 코드
+        //UI 관련 코드: 검색 버튼 클릭 시 바로 크롤링 실행 (폴링 없음)
         UI ui = new UI();
-        ui.First();
-
-        Book previousInput = null;
-
-        while (true) {
-            try {
-                // 1초 대기
-                Thread.sleep(1000);
-                Book input = ui.getBook();
-
-                if (input != null) {
-                    // 이전 input과 현재 input이 같으면 1초 대기
-                    if (!input.equals(previousInput)) {
-                        // 이전 값 갱신
-                        previousInput = input;
-
-                        if (input.getPlatform().contains("Series")) {
-                            Execution ex1 = new Execution();
-                            List<Book> naver = ex1.Start("naver", input);
-                            //ui.End(naver, "Naver");
-                            naver.sort(Book.Sort);
-                            saveBookList(naver, input.toString());
-                        }
-                
-                        if (input.getPlatform().contains("Kakao")) {
-                            Execution ex2 = new Execution();
-                            List<Book> kakao = ex2.Start("kakao", input);
-                            //ui.End(kakao, "Kakao");
-                            kakao.sort(Book.Sort);
-                            saveBookList(kakao, input.toString());
-                        }
-                
-                        if (input.getPlatform().contains("Pia")) {
-                            Execution ex3 = new Execution();
-                            List<Book> Pia = ex3.Start("pia", input);
-                            //ui.End(Pia, "Pia");
-                            Pia.sort(Book.Sort);
-                            saveBookList(Pia, input.toString());
-                        }
-                    }
-                }
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+        ui.First(input -> {
+            if (input.getPlatform().contains("Series")) {
+                Execution ex1 = new Execution();
+                List<Book> naver = ex1.Start("naver", input);
+                //ui.End(naver, "Naver");
+                naver.sort(Book.Sort);
+                saveBookList(naver, input.toString());
             }
-        }
 
+            if (input.getPlatform().contains("Kakao")) {
+                Execution ex2 = new Execution();
+                List<Book> kakao = ex2.Start("kakao", input);
+                //ui.End(kakao, "Kakao");
+                kakao.sort(Book.Sort);
+                saveBookList(kakao, input.toString());
+            }
+
+            if (input.getPlatform().contains("Pia")) {
+                Execution ex3 = new Execution();
+                List<Book> Pia = ex3.Start("pia", input);
+                //ui.End(Pia, "Pia");
+                Pia.sort(Book.Sort);
+                saveBookList(Pia, input.toString());
+            }
+        });
     }
 }
 

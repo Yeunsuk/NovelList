@@ -14,8 +14,11 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -50,16 +53,35 @@ class BookCrawler implements Runnable {
     
     public String piaplatform = "https://novelpia.com/";
     public static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+
+    // 헤드리스 + 이미지 로딩 차단 (페이지 로드 속도용)
+    public static ChromeOptions buildHeadlessOptions() {
+        ChromeOptions options = new ChromeOptions();
+        options.addArguments("--headless");
+        options.addArguments("--disable-gpu");
+        options.addArguments("--window-size=1920x1080");
+        Map<String, Object> prefs = new HashMap<>();
+        prefs.put("profile.managed_default_content_settings.images", 2);
+        options.setExperimentalOption("prefs", prefs);
+        return options;
+    }
+
     private String bookUrl;
     private String platform;
     private List<Book> books;
     private Book input;
+    private ThreadLocal<WebDriver> driverPool; // kakao에서만 사용: 이번 검색 세션의 스레드풀 워커당 드라이버 재사용
 
     public BookCrawler(String bookUrl, String platform, List<Book> books, Book input) {
+        this(bookUrl, platform, books, input, null);
+    }
+
+    public BookCrawler(String bookUrl, String platform, List<Book> books, Book input, ThreadLocal<WebDriver> driverPool) {
         this.bookUrl = bookUrl;
         this.platform = platform;
         this.books = books;
         this.input = input;
+        this.driverPool = driverPool;
     }
 
     @Override
@@ -132,57 +154,61 @@ class BookCrawler implements Runnable {
 
     // 카카오: Vue/React SPA라 브라우저(JS 실행) 필요
     private void runKakao() {
-        // 브라우저 안띄우기
-        ChromeOptions options = new ChromeOptions();
-        options.addArguments("--headless");
-        options.addArguments("--disable-gpu");
-        options.addArguments("--window-size=1920x1080");
-        WebDriver driver = new ChromeDriver(options);
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(25));
-        String booklink = "";
+        String booklink = kakaoplatform + bookUrl + "?tab_type=about";
+        Exception lastError = null;
 
-        try {
-            booklink = kakaoplatform + bookUrl + "?tab_type=about";
-            driver.get(booklink);
-
-            WebElement bookdescription1 = null;
-            WebElement bookdescription2 = null;
-            WebElement booktitle = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaotitle)));
-            WebElement bookscore = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaoscore)));
-            int score = (int) Math.round(Double.parseDouble(bookscore.getText()) * 10);
-            List<WebElement> taglinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(kakaotags)));
-            WebElement bookauthor = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaoauthor)));
+        // 실패시 한번 더 재시도 (타임아웃 짧게 잡은 대신)
+        for (int attempt = 1; attempt <= 2; attempt++) {
             try {
-                bookdescription1 = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaodescription1)));
-            } catch (Exception e) {
-                if (bookdescription1 == null) {
-                    bookdescription2 = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaodescription2)));
-                }
-            }
-
-            // 설명 중 로드된 요소
-            WebElement bookdescription = (bookdescription1 != null) ? bookdescription1 : bookdescription2;
-
-            List<String> booktags = new ArrayList<>();
-            for (WebElement link : taglinks) {
-                String tagText = link.getText();
-                booktags.add(tagText.replace("#", ""));
-            }
-
-            if (isFilteredOut(booktags)) {
+                attemptKakao(booklink);
                 return;
+            } catch (Exception e) {
+                lastError = e;
             }
+        }
 
-            synchronized (books) {
-                Book book = new Book(booktitle.getText(), score, booktags, bookauthor.getText(), booklink, bookdescription.getText().replaceAll("\\s+", " ").trim(), platform);
-                books.add(book);
-            }
+        System.out.println("오류 발생: " + booklink);
+        System.out.println("오류 원인: " + (lastError != null ? lastError.getMessage() : "알 수 없음"));
+    }
 
+    private void attemptKakao(String booklink) {
+        // 스레드풀 워커가 이미 만들어둔 드라이버 재사용 (책마다 새로 안 띄움)
+        WebDriver driver = driverPool.get();
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(8));
+
+        driver.get(booklink);
+
+        WebElement bookdescription1 = null;
+        WebElement bookdescription2 = null;
+        WebElement booktitle = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaotitle)));
+        WebElement bookscore = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaoscore)));
+        int score = (int) Math.round(Double.parseDouble(bookscore.getText()) * 10);
+        List<WebElement> taglinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(kakaotags)));
+        WebElement bookauthor = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaoauthor)));
+        try {
+            bookdescription1 = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaodescription1)));
         } catch (Exception e) {
-            System.out.println("오류 발생: " + booklink);
-            System.out.println("오류 원인: " + e.getMessage());
-        } finally {
-            driver.quit();
+            if (bookdescription1 == null) {
+                bookdescription2 = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaodescription2)));
+            }
+        }
+
+        // 설명 중 로드된 요소
+        WebElement bookdescription = (bookdescription1 != null) ? bookdescription1 : bookdescription2;
+
+        List<String> booktags = new ArrayList<>();
+        for (WebElement link : taglinks) {
+            String tagText = link.getText();
+            booktags.add(tagText.replace("#", ""));
+        }
+
+        if (isFilteredOut(booktags)) {
+            return;
+        }
+
+        synchronized (books) {
+            Book book = new Book(booktitle.getText(), score, booktags, bookauthor.getText(), booklink, bookdescription.getText().replaceAll("\\s+", " ").trim(), platform);
+            books.add(book);
         }
     }
 
@@ -254,13 +280,8 @@ public class Execution {
                 break;
         }
 
-        // 브라우저 안띄우기
-        ChromeOptions options = new ChromeOptions();
-        options.addArguments("--headless");
-        options.addArguments("--disable-gpu");
-        options.addArguments("--window-size=1920x1080");
-        WebDriver driver = new ChromeDriver(options);
-        
+        // 브라우저 안띄우기 (이미지 로딩도 꺼서 로드 속도 개선)
+        WebDriver driver = new ChromeDriver(BookCrawler.buildHeadlessOptions());
 
         try {
              // 웹 페이지 열기
@@ -316,20 +337,28 @@ public class Execution {
                 List<Future<?>> futures = new ArrayList<>();
                 int cnt = 0;
 
+                // 이번 검색 세션 전용 드라이버풀 (스레드풀 워커당 하나씩 재사용, 책마다 새로 안 띄움)
+                Set<WebDriver> sessionDrivers = Collections.synchronizedSet(new HashSet<>());
+                ThreadLocal<WebDriver> driverPool = ThreadLocal.withInitial(() -> {
+                    WebDriver d = new ChromeDriver(BookCrawler.buildHeadlessOptions());
+                    sessionDrivers.add(d);
+                    return d;
+                });
+
                 // 각 상품에 대해 스레드 풀에 작업을 할당
                 for (WebElement link : bookLinks) {
-                        
+
                     WebElement title = link.findElement(By.cssSelector(bookname));
                     String name = title.getText();
                     if (!input.getTitle().isEmpty() && !name.contains(input.getTitle())) {
                         continue;
                     }
-                        
+
                     String bookUrl = link.getDomAttribute("href");
-                    Future<?> future = executorService.submit(new BookCrawler(bookUrl, platform, books, input));
+                    Future<?> future = executorService.submit(new BookCrawler(bookUrl, platform, books, input, driverPool));
                     futures.add(future);
                 }
-                    
+
                 // 모든 작업이 완료될 때까지 대기
                 for (Future<?> future : futures) {
                     try {
@@ -339,15 +368,24 @@ public class Execution {
                         e.printStackTrace();
                     }
                 }
-            
+
                 executorService.shutdown();
-            
+                for (WebDriver d : sessionDrivers) {
+                    try {
+                        d.quit();
+                    } catch (Exception ignored) {
+                    }
+                }
+
             } else {
                 List<WebElement> pageLinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(sitepage)));
                 System.out.println("페이지 링크: "+pageLinks.size());
                 int totalpage = pageLinks.size();
                 int count = 0;
-                
+
+                // 페이지마다 새로 만들지 않고 하나만 만들어 재사용
+                ExecutorService executorService = Executors.newFixedThreadPool(4);
+
                 for (WebElement pageLink : pageLinks) {
                     String linkText = pageLink.getText();
                     int cnt = 0;
@@ -367,11 +405,9 @@ public class Execution {
                     // 상품 목록에서 링크 추출
                     wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(booklist)));
                     List<WebElement> bookLinks = driver.findElements(By.cssSelector(booklist));
-            
-                    // 스레드 풀 생성
-                    ExecutorService executorService = Executors.newFixedThreadPool(4);
+
                     List<Future<?>> futures = new ArrayList<>();
-            
+
                     // 각 상품에 대해 스레드 풀에 작업을 할당
                     for (WebElement link : bookLinks) {
 
@@ -395,10 +431,9 @@ public class Execution {
                             e.printStackTrace();
                         }
                     }
-            
-                    executorService.shutdown();
                 }
-            }   
+                executorService.shutdown();
+            }
         } catch (Exception e) {
             e.printStackTrace();
         } finally {
