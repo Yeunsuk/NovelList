@@ -3,10 +3,13 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // 크롤링 CSS 셀렉터 설정 로더. 사이트 구조 바뀌었을 때 재빌드 없이
 // 실행파일 옆 selectors.properties만 고치면 반영되게 하기 위함.
 public class SelectorConfig {
+    private static final Logger log = LoggerFactory.getLogger(SelectorConfig.class);
     private static final Properties props = new Properties();
 
     static {
@@ -16,7 +19,7 @@ public class SelectorConfig {
                 props.load(in);
             }
         } catch (IOException e) {
-            System.out.println("기본 셀렉터 설정 로드 실패: " + e.getMessage());
+            log.error("기본 셀렉터 설정 로드 실패", e);
         }
 
         // 2. 실행파일 옆에 같은 이름의 파일 있으면 덮어쓰기 (재빌드 없이 패치 가능)
@@ -24,9 +27,9 @@ public class SelectorConfig {
         if (external.exists()) {
             try (InputStream in = new FileInputStream(external)) {
                 props.load(in);
-                System.out.println("외부 셀렉터 설정 적용됨: " + external.getAbsolutePath());
+                log.info("외부 셀렉터 설정 적용됨: {}", external.getAbsolutePath());
             } catch (IOException e) {
-                System.out.println("외부 셀렉터 설정 로드 실패: " + e.getMessage());
+                log.error("외부 셀렉터 설정 로드 실패", e);
             }
         }
     }

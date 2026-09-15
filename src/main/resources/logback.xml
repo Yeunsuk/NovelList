@@ -5,7 +5,24 @@
         </encoder>
     </appender>
 
-    <root level="debug">
+    <appender name="file" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/novellist.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/novellist.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>14</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Selenium/httpclient 내부 라이브러리는 debug 로그가 매우 방대함(수십MB) -->
+    <logger name="org.apache.hc" level="warn" />
+    <logger name="org.openqa.selenium" level="warn" />
+    <logger name="io.github.bonigarcia" level="info" />
+
+    <root level="info">
         <appender-ref ref="stdout" />
+        <appender-ref ref="file" />
     </root>
 </configuration>

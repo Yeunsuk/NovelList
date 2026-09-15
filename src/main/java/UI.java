@@ -6,9 +6,7 @@ import javax.swing.*;
 import java.awt.*;
 
 public class UI {
-    private Book book;
-
-    public void First(Consumer<Book> onSearch) {
+    public void First(Consumer<SearchQuery> onSearch) {
         SwingUtilities.invokeLater(() -> {
             // 프레임 생성
             JFrame frame = new JFrame("검색 조건 설정");
@@ -108,15 +106,14 @@ public class UI {
                 }
                 
 
-                // Book 객체 생성
-                book = new Book(title, 0, tags, author, "", operation, platforms);
+                // 검색 조건 객체 생성
+                SearchQuery query = new SearchQuery(title, author, tags, operation, platforms);
 
                 // 입력한 값을 출력
                 JOptionPane.showMessageDialog(frame, "플랫폼: " + platforms + "\n연산: " + operation + "\n태그: " + tags + "\n타이틀: " + title);
 
                 // 크롤링은 오래 걸리니 EDT 말고 별도 스레드에서 바로 실행 (폴링 없이 클릭으로 트리거)
-                Book searchBook = book;
-                new Thread(() -> onSearch.accept(searchBook)).start();
+                new Thread(() -> onSearch.accept(query)).start();
             });
             
             // 프레임 하단에 버튼 배치
@@ -183,9 +180,5 @@ public class UI {
         bookPanel.add(descriptionTextArea);
         
         return bookPanel;
-    }
-
-    public Book getBook() {
-        return book;
     }
 }

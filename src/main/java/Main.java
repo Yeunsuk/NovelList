@@ -1,50 +1,54 @@
-// 진행률 추가
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 import io.github.bonigarcia.wdm.WebDriverManager;
-import java.util.Comparator;
 import javax.swing.SwingUtilities;
-
-import org.openqa.selenium.By;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.WebDriverWait;
-import java.time.Duration;
-import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Main {
+    private static final Logger log = LoggerFactory.getLogger(Main.class);
+    private static final String RESULT_DIR = "결과";
+
     public static void saveBookList(List<Book> bookList, String fileName) {
+        new File(RESULT_DIR).mkdirs();
         try (FileWriter writer = new FileWriter(fileName)) {
             for (Book book : bookList) {
                 writer.write(book.toString() + "\n");
             }
-            System.out.println("북리스트가 파일에 저장되었습니다.");
+            log.info("북리스트가 파일에 저장되었습니다: {}", fileName);
         } catch (IOException e) {
-            System.out.println("파일 저장 중 오류가 발생했습니다: " + e.getMessage());
+            log.error("파일 저장 중 오류가 발생했습니다: {}", e.getMessage());
         }
     }
+
+    // 파일명에 못 쓰는 문자 제거 + 길이 제한
+    static String sanitizeFileName(String raw) {
+        String cleaned = raw.replaceAll("[\\\\/:*?\"<>|\\r\\n\\t]", "_").trim();
+        if (cleaned.length() > 50) {
+            cleaned = cleaned.substring(0, 50);
+        }
+        return cleaned.isEmpty() ? "검색결과" : cleaned;
+    }
+
+    static String buildFileName(String platform, SearchQuery query) {
+        String keyword;
+        if (!query.getTitle().isEmpty()) {
+            keyword = query.getTitle();
+        } else if (!query.getAuthor().isEmpty()) {
+            keyword = query.getAuthor();
+        } else {
+            keyword = String.join(",", query.getTags());
+        }
+        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        return RESULT_DIR + "/" + platform + "_" + sanitizeFileName(keyword) + "_" + timestamp + ".txt";
+    }
+
     public static void main(String[] args) {
 
-        
-        /*// css찾기
-        WebDriver driver = new ChromeDriver();
-        // 웹사이트로 이동
-        driver.get("https://novelpia.com//novel/337811");
-
-        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(10));
-        List<WebElement> divElements = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector("div.epnew-wrapper.s_inv > div.epnew-novel-info > div.ep-info-line.epnew-novel-title")));
-        
-        for (WebElement div : divElements) {
-            System.out.println("div 클래스 이름: " + div.getDomAttribute("class"));
-            System.out.println("div 텍스트: " + div.getText().replaceAll("\\s+", " ").trim());
-            //System.out.println(div.getDomAttribute("href"));
-        }
-        driver.quit(); */
- 
-         
         // WebDriverManager를 사용하여 ChromeDriver 자동 다운로드 및 설정
         if (System.getProperty("webdriver.chrome.driver") == null) {
             WebDriverManager.chromedriver().setup();
@@ -52,133 +56,30 @@ public class Main {
 
         //UI 관련 코드: 검색 버튼 클릭 시 바로 크롤링 실행 (폴링 없음)
         UI ui = new UI();
-        ui.First(input -> {
-            if (input.getPlatform().contains("Series")) {
+        ui.First(query -> {
+            if (query.getPlatforms().contains("Series")) {
                 Execution ex1 = new Execution();
-                List<Book> naver = ex1.Start("naver", input);
+                List<Book> naver = ex1.Start("naver", query);
                 naver.sort(Book.Sort);
-                saveBookList(naver, input.toString());
+                saveBookList(naver, buildFileName("naver", query));
                 SwingUtilities.invokeLater(() -> ui.End(naver, "Naver"));
             }
 
-            if (input.getPlatform().contains("Kakao")) {
+            if (query.getPlatforms().contains("Kakao")) {
                 Execution ex2 = new Execution();
-                List<Book> kakao = ex2.Start("kakao", input);
+                List<Book> kakao = ex2.Start("kakao", query);
                 kakao.sort(Book.Sort);
-                saveBookList(kakao, input.toString());
+                saveBookList(kakao, buildFileName("kakao", query));
                 SwingUtilities.invokeLater(() -> ui.End(kakao, "Kakao"));
             }
 
-            if (input.getPlatform().contains("Pia")) {
+            if (query.getPlatforms().contains("Pia")) {
                 Execution ex3 = new Execution();
-                List<Book> Pia = ex3.Start("pia", input);
-                Pia.sort(Book.Sort);
-                saveBookList(Pia, input.toString());
-                SwingUtilities.invokeLater(() -> ui.End(Pia, "Pia"));
+                List<Book> pia = ex3.Start("pia", query);
+                pia.sort(Book.Sort);
+                saveBookList(pia, buildFileName("pia", query));
+                SwingUtilities.invokeLater(() -> ui.End(pia, "Pia"));
             }
         });
     }
-}
-
-
-
-class Book {
-    private String title; // 책 제목
-    private int score; // 책 점수
-    private List<String> tags; // 태그 리스트
-    private String author; // 작가
-    private String link; // 책 링크
-    private String description; // 책 설명
-    private String platform; // 플랫폼
-
-    // 생성자
-    public Book(String title, int score, List<String> tags, String author, String link, String description, String platform) {
-        this.title = title;
-        this.score = score;
-        this.tags = tags;
-        this.author = author;
-        this.link = link;
-        this.description = description;
-        this.platform = platform;
-    }
-    
-
-    // Getter와 Setter
-    public String getTitle() {
-        return title;
-    }
-
-    public void setTitle(String title) {
-        this.title = title;
-    }
-
-    public int getScore() {
-        return score;
-    }
-
-    public void setScore(int score) {
-        this.score = score;
-    }
-
-    public List<String> getTags() {
-        return tags;
-    }
-
-    public void setTags(List<String> tags) {
-        this.tags = tags;
-    }
-
-    public String getAuthor() {
-        return author;
-    }
-
-    public void setAuthor(String author) {
-        this.author = author;
-    }
-
-    public String getLink() {
-        return link;
-    }
-
-    public void setLink(String link) {
-        this.link = link;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
-    }
-
-    public void setPlatform(String platform) {
-        this.platform = platform;
-    }
-
-    public String getPlatform() {
-        return platform;
-    }
-
-    // 출력 형식 정의
-    @Override
-    public String toString() {
-        return "Book{" +
-                "title='" + (title.isEmpty() ? "없음" : title) + '\'' +
-                ", score=" + score +
-                ", tags=" + (tags.isEmpty() ? "없음" : tags) +
-                ", author='" + (author.isEmpty() ? "미정" : author) + '\'' +
-                ", link='" + (link.isEmpty() ? "없음" : link) + '\'' +
-                ", description='" + (description.isEmpty() ? "미정" : description) + '\'' +
-                ", platform='" + (platform.isEmpty() ? "없음" : platform) + '\'' +
-                '}';
-    }
-
-    // 점수 기준 내림차순 Comparator
-    public static final Comparator<Book> Sort = new Comparator<Book>() {
-        @Override
-        public int compare(Book b1, Book b2) {
-            return Integer.compare(b2.score, b1.score); // 내림차순 정렬
-        }
-    };
 }

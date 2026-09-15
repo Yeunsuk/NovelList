@@ -17,6 +17,13 @@ dependencies {
     implementation 'io.github.bonigarcia:webdrivermanager:5.9.3'
     implementation 'org.slf4j:slf4j-api:2.1.0-alpha1'
     implementation 'ch.qos.logback:logback-classic:1.5.16'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 

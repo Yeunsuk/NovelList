@@ -26,9 +26,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 //입력예시 : Book{title='없음', score=0, tags=[현대판타지, 무협, fgdf, df], author='미정', link='없음', description='합집합', platform='Series KakaoPage '}
 // 카카오 스크롤롤
 class BookCrawler implements Runnable {
+    private static final Logger log = LoggerFactory.getLogger(BookCrawler.class);
+
     public String navertitle = SelectorConfig.get("naver.title");
     public String naverscore = SelectorConfig.get("naver.score");
     public String navertags = SelectorConfig.get("naver.tags");
@@ -69,14 +73,14 @@ class BookCrawler implements Runnable {
     private String bookUrl;
     private String platform;
     private List<Book> books;
-    private Book input;
+    private SearchQuery input;
     private ThreadLocal<WebDriver> driverPool; // kakao에서만 사용: 이번 검색 세션의 스레드풀 워커당 드라이버 재사용
 
-    public BookCrawler(String bookUrl, String platform, List<Book> books, Book input) {
+    public BookCrawler(String bookUrl, String platform, List<Book> books, SearchQuery input) {
         this(bookUrl, platform, books, input, null);
     }
 
-    public BookCrawler(String bookUrl, String platform, List<Book> books, Book input, ThreadLocal<WebDriver> driverPool) {
+    public BookCrawler(String bookUrl, String platform, List<Book> books, SearchQuery input, ThreadLocal<WebDriver> driverPool) {
         this.bookUrl = bookUrl;
         this.platform = platform;
         this.books = books;
@@ -108,8 +112,7 @@ class BookCrawler implements Runnable {
             }
         }
 
-        System.out.println("오류 발생: " + booklink);
-        System.out.println("오류 원인: " + (lastError != null ? lastError.getMessage() : "알 수 없음"));
+        log.error("크롤링 실패: {} ({})", booklink, lastError != null ? lastError.getMessage() : "알 수 없음");
     }
 
     private void attemptJsoup(String booklink) throws IOException {
@@ -177,8 +180,7 @@ class BookCrawler implements Runnable {
             }
         }
 
-        System.out.println("오류 발생: " + booklink);
-        System.out.println("오류 원인: " + (lastError != null ? lastError.getMessage() : "알 수 없음"));
+        log.error("크롤링 실패: {} ({})", booklink, lastError != null ? lastError.getMessage() : "알 수 없음");
     }
 
     private void attemptKakao(String booklink) {
@@ -223,10 +225,10 @@ class BookCrawler implements Runnable {
     }
 
     // 태그 연산 필터 (합집합/교집합)
-    private boolean isFilteredOut(List<String> booktags) {
-        if (input.getDescription().equals("합집합")) {
+    boolean isFilteredOut(List<String> booktags) {
+        if (input.getTagOperation().equals("합집합")) {
             return input.getTags() != null && input.getTags().stream().anyMatch(tag -> !booktags.contains(tag));
-        } else if (input.getDescription().equals("교집합")) {
+        } else if (input.getTagOperation().equals("교집합")) {
             return input.getTags() != null && booktags.stream().noneMatch(input.getTags()::contains);
         }
         return false;
@@ -236,6 +238,7 @@ class BookCrawler implements Runnable {
 
 
 public class Execution {
+    private static final Logger log = LoggerFactory.getLogger(Execution.class);
     private String Series = "https://series.naver.com/novel/categoryProductList.series?categoryTypeCode=all&genreCode=&orderTypeCode=new&is&isFinished=true";
     private String SeriesSearch1 = "https://series.naver.com/search/search.series?t=novel&q=";
     private String SeriesSearch2 = "#";
@@ -257,7 +260,7 @@ public class Execution {
     private String Pianame = SelectorConfig.get("pia.name");
     private String Piapage = SelectorConfig.get("pia.page");
 
-    public List<Book> Start(String platform, Book input) {
+    public List<Book> Start(String platform, SearchQuery input) {
         if (platform.equals("naver")) {
             return StartNaver(input);
         }
@@ -313,7 +316,7 @@ public class Execution {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("검색 URL 생성 실패", e);
         }
 
         try {
@@ -377,15 +380,15 @@ public class Execution {
                     for (Future<?> future : futures) {
                         try {
                             future.get();
-                            System.out.println(++cnt+ "/" + bookLinks.size());
+                            log.info("{}/{}", ++cnt, bookLinks.size());
                         } catch (InterruptedException | ExecutionException e) {
-                            e.printStackTrace();
+                            log.error("크롤링 작업 실패", e);
                         }
                     }
 
                 } else {
                     List<WebElement> pageLinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(sitepage)));
-                    System.out.println("페이지 링크: "+pageLinks.size());
+                    log.info("페이지 링크: {}", pageLinks.size());
                     int totalpage = pageLinks.size();
                     int count = 0;
 
@@ -393,8 +396,7 @@ public class Execution {
                         String linkText = pageLink.getText();
                         int cnt = 0;
                         count++;
-                        System.out.println("진행률: "+count+ "/" +totalpage);
-                        System.out.println(pageLink.getText());
+                        log.info("진행률: {}/{} ({})", count, totalpage, pageLink.getText());
 
                         // 숫자가 아닌 페이지 버튼은 클릭하지 않도록 필터링
                         if (!linkText.matches("\\d+")) {
@@ -429,9 +431,9 @@ public class Execution {
                         for (Future<?> future : futures) {
                             try {
                                 future.get();
-                                System.out.println(++cnt+ "/" + bookLinks.size());
+                                log.info("{}/{}", ++cnt, bookLinks.size());
                             } catch (InterruptedException | ExecutionException e) {
-                                e.printStackTrace();
+                                log.error("크롤링 작업 실패", e);
                             }
                         }
                     }
@@ -446,7 +448,7 @@ public class Execution {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("크롤링 중 오류", e);
         } finally {
             driver.quit();
         }
@@ -454,7 +456,7 @@ public class Execution {
     }
 
     // 태그 여러개 검색시 같은 책이 여러 태그 목록에 겹쳐 나올 수 있어 링크 기준으로 중복 제거
-    private static List<Book> dedupeByLink(List<Book> books) {
+    static List<Book> dedupeByLink(List<Book> books) {
         List<Book> result = new ArrayList<>();
         Set<String> seenLinks = new HashSet<>();
         for (Book book : books) {
@@ -466,7 +468,7 @@ public class Execution {
     }
 
     // 네이버 장르명 -> 카테고리 코드 (네이버 시리즈에 실제 존재하는 장르 전체)
-    private static String naverGenreCode(String tag) {
+    static String naverGenreCode(String tag) {
         switch (tag) {
             case "로맨스": return "201";
             case "로판":
@@ -483,7 +485,7 @@ public class Execution {
     }
 
     // 네이버: 정적 HTML이라 브라우저 없이 jsoup으로 목록+페이지네이션 처리 (가벼움)
-    private List<Book> StartNaver(Book input) {
+    private List<Book> StartNaver(SearchQuery input) {
         List<Book> books = Collections.synchronizedList(new ArrayList<>());
 
         // 검색할 URL 목록 (태그 여러개 선택시 태그별로 각각 검색, 결과는 뒤에서 합침)
@@ -499,14 +501,14 @@ public class Execution {
                 for (String tag : input.getTags()) {
                     String code = naverGenreCode(tag);
                     if (code == null) {
-                        System.out.println("네이버는 '" + tag + "' 장르를 지원하지 않아 건너뜀");
+                        log.warn("네이버는 '{}' 장르를 지원하지 않아 건너뜀", tag);
                         continue;
                     }
                     searchUrls.add(SeriestagSearch + code);
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("검색 URL 생성 실패", e);
         }
 
         ExecutorService executorService = Executors.newFixedThreadPool(8);
@@ -532,7 +534,7 @@ public class Execution {
 
                 for (String pageUrl : pageUrls) {
                     count++;
-                    System.out.println("진행률: " + count + "/" + totalPage);
+                    log.info("진행률: {}/{}", count, totalPage);
 
                     Document pageDoc = pageUrl.equals(url) ? firstPage : Jsoup.connect(pageUrl).userAgent(BookCrawler.USER_AGENT).timeout(10000).get();
                     Elements bookLinks = pageDoc.select(Serieslist);
@@ -551,14 +553,14 @@ public class Execution {
                     for (Future<?> future : futures) {
                         try {
                             future.get();
-                            System.out.println(++cnt + "/" + bookLinks.size());
+                            log.info("{}/{}", ++cnt, bookLinks.size());
                         } catch (InterruptedException | ExecutionException e) {
-                            e.printStackTrace();
+                            log.error("크롤링 작업 실패", e);
                         }
                     }
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+                log.error("페이지 조회 실패: {}", url, e);
             }
         }
 
