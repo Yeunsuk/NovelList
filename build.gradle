@@ -49,12 +49,44 @@ shadowJar {
 }
 
 
+// jdeps --multi-release 21 --print-module-deps 로 NovelList-all.jar의 실제 필요 모듈을 뽑고
+// jdk.crypto.ec(HTTPS 인증서 검증)/jdk.charsets(확장 문자셋)는 jdeps가 놓치기 쉬워서 수동 추가
+def jlinkModules = 'java.base,java.compiler,java.desktop,java.instrument,java.management,java.naming,java.net.http,java.security.jgss,java.sql,jdk.unsupported,jdk.crypto.ec,jdk.charsets'
+
+tasks.register('jlinkRuntime', Exec) {
+    group = 'build'
+    description = 'exe에 번들할 경량 JRE 생성 (필요 모듈만 담아 전체 JDK보다 훨씬 작음)'
+    def jreDir = file('build/libs/jre')
+    outputs.dir(jreDir)
+    doFirst { delete(jreDir) }
+    commandLine "${System.getProperty('java.home')}/bin/jlink",
+            '--module-path', "${System.getProperty('java.home')}/jmods",
+            '--add-modules', jlinkModules,
+            '--output', jreDir.path,
+            '--no-header-files', '--no-man-pages', '--strip-debug', '--compress=2'
+}
+
 launch4j {
     mainClassName = 'Main'
-    outfile = 'build/libs/NovelList.exe'  // EXE 파일 출력 경로
-    jreMinVersion = '21'  // 필요한 최소 JRE 버전 설정
+    outfile = 'build/libs/NovelList.exe'  // EXE 파일 출력 경로 (launch4j 플러그인 내부 작업폴더 build/launch4j 기준 상대경로라 실제로는 build/launch4j/build/libs/에 생김)
+    jreMinVersion = '21'  // 번들 JRE를 못 찾았을 때 시스템 JRE로 폴백하는 경우의 최소 버전
     dontWrapJar = false  // JAR 파일을 EXE로 래핑할 것인지 여부
-    bundledJrePath = 'build/jre'  // JRE 경로 설정
+    bundledJrePath = 'jre'  // exe와 같은 폴더의 jre를 상대경로로 참조 - 사용자 PC에 Java 없어도 실행됨
+    jvmOptions = ['-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8']  // exe로 실행해도 한글 깨짐 없게
 }
-//jlink --module-path $JAVA_HOME/jmods --add-modules java.base,java.sql --output build/jre
-//gradle createExe
+
+// launch4j 플러그인이 exe를 자기 내부 작업폴더(build/launch4j/...)에 생성해서
+// bundledJrePath='jre'가 그 폴더 기준으로 잡히도록, exe 생성 후에 jre를 그 옆으로 복사
+tasks.register('bundleExeJre', Copy) {
+    group = 'build'
+    description = '번들 JRE(jlinkRuntime 산출물)를 실제 exe가 생성된 폴더 옆으로 복사'
+    dependsOn jlinkRuntime, createExe
+    from jlinkRuntime
+    into { createExe.dest.get().asFile.parentFile.toPath().resolve('jre').toFile() }
+}
+
+tasks.register('buildExeDist') {
+    group = 'build'
+    description = 'exe + lib + 번들 JRE까지 배포 가능한 상태로 한 번에 생성'
+    dependsOn createExe, bundleExeJre
+}
