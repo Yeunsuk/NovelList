@@ -12,6 +12,7 @@ import io.github.bonigarcia.wdm.WebDriverManager;
 import javax.swing.SwingUtilities;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.bridge.SLF4JBridgeHandler;
 
 public class Main {
     private static final Logger log = LoggerFactory.getLogger(Main.class);
@@ -30,6 +31,63 @@ public class Main {
         }
     }
 
+    // 태그가 리스트라 CSV는 구분자 이스케이프가 번거로움 - JSON이 구조 그대로 저장하기 안전함
+    public static void saveBookListJson(List<Book> bookList, String fileName) {
+        new File(RESULT_DIR).mkdirs();
+        StringBuilder sb = new StringBuilder("[\n");
+        for (int i = 0; i < bookList.size(); i++) {
+            Book book = bookList.get(i);
+            sb.append("  {\n");
+            sb.append("    \"title\": ").append(jsonString(book.getTitle())).append(",\n");
+            sb.append("    \"score\": ").append(book.getScore()).append(",\n");
+            sb.append("    \"tags\": [").append(jsonStringArray(book.getTags())).append("],\n");
+            sb.append("    \"author\": ").append(jsonString(book.getAuthor())).append(",\n");
+            sb.append("    \"link\": ").append(jsonString(book.getLink())).append(",\n");
+            sb.append("    \"description\": ").append(jsonString(book.getDescription())).append(",\n");
+            sb.append("    \"platform\": ").append(jsonString(book.getPlatform())).append("\n");
+            sb.append("  }").append(i < bookList.size() - 1 ? "," : "").append("\n");
+        }
+        sb.append("]\n");
+
+        try (Writer writer = new OutputStreamWriter(new FileOutputStream(fileName), StandardCharsets.UTF_8)) {
+            writer.write(sb.toString());
+            log.info("북리스트가 JSON으로 저장되었습니다: {}", fileName);
+        } catch (IOException e) {
+            log.error("JSON 파일 저장 중 오류가 발생했습니다: {}", e.getMessage());
+        }
+    }
+
+    private static String jsonStringArray(List<String> values) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < values.size(); i++) {
+            sb.append(jsonString(values.get(i)));
+            if (i < values.size() - 1) sb.append(", ");
+        }
+        return sb.toString();
+    }
+
+    private static String jsonString(String value) {
+        if (value == null) return "\"\"";
+        StringBuilder sb = new StringBuilder("\"");
+        for (char c : value.toCharArray()) {
+            switch (c) {
+                case '"': sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+            }
+        }
+        sb.append("\"");
+        return sb.toString();
+    }
+
     // 파일명에 못 쓰는 문자 제거 + 길이 제한
     static String sanitizeFileName(String raw) {
         String cleaned = raw.replaceAll("[\\\\/:*?\"<>|\\r\\n\\t]", "_").trim();
@@ -40,6 +98,10 @@ public class Main {
     }
 
     static String buildFileName(String platform, SearchQuery query) {
+        return buildFileName(platform, query, "txt");
+    }
+
+    static String buildFileName(String platform, SearchQuery query, String extension) {
         String keyword;
         if (!query.getTitle().isEmpty()) {
             keyword = query.getTitle();
@@ -49,13 +111,17 @@ public class Main {
             keyword = String.join(",", query.getTags());
         }
         String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
-        return RESULT_DIR + "/" + platform + "_" + sanitizeFileName(keyword) + "_" + timestamp + ".txt";
+        return RESULT_DIR + "/" + platform + "_" + sanitizeFileName(keyword) + "_" + timestamp + "." + extension;
     }
 
     public static void main(String[] args) {
         // 콘솔 인코딩이 UTF-8이 아닌 환경(한국어 Windows 등)에서 로그 한글 깨짐 방지
         System.setOut(new PrintStream(System.out, true, StandardCharsets.UTF_8));
         System.setErr(new PrintStream(System.err, true, StandardCharsets.UTF_8));
+
+        // Selenium DevTools 등이 java.util.logging으로 찍는 경고가 logback을 우회해 콘솔에 그대로 새는 것 방지
+        SLF4JBridgeHandler.removeHandlersForRootLogger();
+        SLF4JBridgeHandler.install();
 
         // WebDriverManager를 사용하여 ChromeDriver 자동 다운로드 및 설정
         if (System.getProperty("webdriver.chrome.driver") == null) {
@@ -72,6 +138,7 @@ public class Main {
                 List<Book> naver = ex1.Start("naver", query, progress::update);
                 naver.sort(Book.Sort);
                 saveBookList(naver, buildFileName("naver", query));
+                saveBookListJson(naver, buildFileName("naver", query, "json"));
                 SwingUtilities.invokeLater(() -> ui.End(naver, "Naver"));
             }
 
@@ -80,6 +147,7 @@ public class Main {
                 List<Book> kakao = ex2.Start("kakao", query, progress::update);
                 kakao.sort(Book.Sort);
                 saveBookList(kakao, buildFileName("kakao", query));
+                saveBookListJson(kakao, buildFileName("kakao", query, "json"));
                 SwingUtilities.invokeLater(() -> ui.End(kakao, "Kakao"));
             }
 
@@ -88,6 +156,7 @@ public class Main {
                 List<Book> pia = ex3.Start("pia", query, progress::update);
                 pia.sort(Book.Sort);
                 saveBookList(pia, buildFileName("pia", query));
+                saveBookListJson(pia, buildFileName("pia", query, "json"));
                 SwingUtilities.invokeLater(() -> ui.End(pia, "Pia"));
             }
 
