@@ -194,8 +194,16 @@ class BookCrawler implements Runnable {
         WebElement bookdescription1 = null;
         WebElement bookdescription2 = null;
         WebElement booktitle = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaotitle)));
-        WebElement bookscore = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaoscore)));
-        int score = (int) Math.round(Double.parseDouble(bookscore.getText()) * 10);
+
+        // 평점이 아예 없는 책도 있음 (신작 등) - 없다고 책 전체를 스킵하지 않고 0점 처리
+        int score = 0;
+        try {
+            WebElement bookscore = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaoscore)));
+            score = (int) Math.round(Double.parseDouble(bookscore.getText()) * 10);
+        } catch (Exception e) {
+            log.debug("평점 없음: {}", booklink);
+        }
+
         List<WebElement> taglinks = wait.until(ExpectedConditions.presenceOfAllElementsLocatedBy(By.cssSelector(kakaotags)));
         WebElement bookauthor = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaoauthor)));
         try {
@@ -329,6 +337,14 @@ public class Execution {
 
         onProgress.accept(platform + ": 검색 시작 (" + searchUrls.size() + "개 조건)");
 
+        // 카카오 장르(태그) 검색은 subcategory_uid로 이미 해당 장르만 걸러져서 들어옴.
+        // 책 상세페이지의 "키워드" 칩(#육아 등)은 장르명과 무관한 별개 필드라서
+        // 거기다 대고 장르명 매칭 필터를 또 돌리면 전부 걸러져버림 -> 이 경우 필터 생략
+        boolean kakaoGenreSearch = platform.equals("kakao") && input.getAuthor().isEmpty() && input.getTitle().isEmpty() && !input.getTags().isEmpty();
+        SearchQuery crawlerInput = kakaoGenreSearch
+                ? new SearchQuery(input.getTitle(), input.getAuthor(), new ArrayList<>(), input.getTagOperation(), input.getPlatforms())
+                : input;
+
         try {
             // 스레드 풀/드라이버풀은 태그 여러개 돌아도 한번만 만들어 재사용
             ExecutorService executorService = Executors.newFixedThreadPool(4);
@@ -382,7 +398,7 @@ public class Execution {
                         }
 
                         String bookUrl = link.getDomAttribute("href");
-                        Future<?> future = executorService.submit(new BookCrawler(bookUrl, platform, books, input, driverPool));
+                        Future<?> future = executorService.submit(new BookCrawler(bookUrl, platform, books, crawlerInput, driverPool));
                         futures.add(future);
                     }
 
