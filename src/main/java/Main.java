@@ -1,3 +1,5 @@
+import java.awt.Color;
+import java.awt.Font;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -10,6 +12,9 @@ import java.util.Date;
 import java.util.List;
 import io.github.bonigarcia.wdm.WebDriverManager;
 import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import javax.swing.UnsupportedLookAndFeelException;
+import com.formdev.flatlaf.FlatLightLaf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
@@ -122,6 +127,19 @@ public class Main {
         // Selenium DevTools 등이 java.util.logging으로 찍는 경고가 logback을 우회해 콘솔에 그대로 새는 것 방지
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         SLF4JBridgeHandler.install();
+
+        try {
+            UIManager.setLookAndFeel(new FlatLightLaf());
+            // 한글 렌더링은 시스템 기본 맑은 고딕이 제일 무난함 - 폰트 파일 내장 없이 크기만 살짝 키움
+            UIManager.put("defaultFont", new Font("맑은 고딕", Font.PLAIN, 13));
+            UIManager.put("Component.accentColor", new Color(0x4A7CC7));
+            UIManager.put("Button.arc", 10);
+            UIManager.put("Component.arc", 10);
+            UIManager.put("TextComponent.arc", 8);
+            UIManager.put("ScrollBar.thumbArc", 999);
+        } catch (UnsupportedLookAndFeelException e) {
+            log.warn("룩앤필 적용 실패, 기본 룩앤필로 진행합니다: {}", e.getMessage());
+        }
 
         // WebDriverManager를 사용하여 ChromeDriver 자동 다운로드 및 설정
         if (System.getProperty("webdriver.chrome.driver") == null) {
