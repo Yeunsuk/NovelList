@@ -36,6 +36,7 @@ public class UI {
             JPanel operationPanel = new JPanel();
             JRadioButton operation1 = new JRadioButton("∪");
             JRadioButton operation2 = new JRadioButton("∩");
+            operation1.setSelected(true); // 태그 필터가 조용히 무시되는 일 없게 기본값 고정 (합집합)
 
             // 라디오 버튼 그룹
             ButtonGroup operationGroup = new ButtonGroup();
@@ -115,8 +116,15 @@ public class UI {
                 // 입력한 값을 출력
                 JOptionPane.showMessageDialog(frame, "플랫폼: " + platforms + "\n연산: " + operation + "\n태그: " + tags + "\n타이틀: " + title);
 
-                // 크롤링은 오래 걸리니 EDT 말고 별도 스레드에서 바로 실행 (폴링 없이 클릭으로 트리거)
-                new Thread(() -> onSearch.accept(query)).start();
+                // 검색 중 연타하면 크롬 인스턴스가 중복으로 뜨니 끝날 때까지 버튼 비활성화
+                submitButton.setEnabled(false);
+                new Thread(() -> {
+                    try {
+                        onSearch.accept(query);
+                    } finally {
+                        SwingUtilities.invokeLater(() -> submitButton.setEnabled(true));
+                    }
+                }).start();
             });
             
             // 프레임 하단에 버튼 배치

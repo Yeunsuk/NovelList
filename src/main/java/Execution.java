@@ -47,6 +47,7 @@ class BookCrawler implements Runnable {
     public String kakaodescription1 = SelectorConfig.get("kakao.description1");
     public String kakaodescription2 = SelectorConfig.get("kakao.description2");
     public String kakaoauthor = SelectorConfig.get("kakao.author");
+    public String kakaologinwall = SelectorConfig.get("kakao.loginwall");
     public String kakaoplatform = "https://page.kakao.com";
 
 
@@ -190,6 +191,22 @@ class BookCrawler implements Runnable {
         WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(8));
 
         driver.get(booklink);
+
+        // 성인/청불 콘텐츠는 로그인 안 하면 상세정보가 아예 안 뜸 -
+        // 8초 타임아웃 다 기다리지 않고 짧게 확인 후 바로 건너뜀
+        WebDriverWait quickWait = new WebDriverWait(driver, Duration.ofSeconds(2));
+        try {
+            quickWait.until(ExpectedConditions.or(
+                    ExpectedConditions.presenceOfElementLocated(By.cssSelector(kakaotitle)),
+                    ExpectedConditions.presenceOfElementLocated(By.xpath(kakaologinwall))
+            ));
+        } catch (Exception ignored) {
+            // 둘 다 안 뜸 - 진짜 느린 페이지일 수 있으니 아래에서 원래 대기시간(8초)으로 다시 시도
+        }
+        if (!driver.findElements(By.xpath(kakaologinwall)).isEmpty()) {
+            log.info("로그인 필요한 콘텐츠라 건너뜀: {}", booklink);
+            return;
+        }
 
         WebElement bookdescription1 = null;
         WebElement bookdescription2 = null;
